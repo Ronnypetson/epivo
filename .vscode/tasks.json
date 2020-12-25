@@ -1,0 +1,30 @@
+{
+    "tasks": [
+        {
+            "type": "shell",
+            "label": "C/C++: g++-7 build active file",
+            "command": "/usr/bin/g++-7",
+            "args": [
+                "-I",
+                "/usr/local/include/eigen3/",
+                "-I",
+                "/usr/local/include/sophus/",
+                "-g",
+                "${file}",
+                "-o",
+                "${fileDirname}/${fileBasenameNoExtension}"
+            ],
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "problemMatcher": [
+                "$gcc"
+            ],
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            }
+        }
+    ],
+    "version": "2.0.0"
+}
