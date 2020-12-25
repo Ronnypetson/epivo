@@ -119,7 +119,31 @@ int Dr_Deps(const MatrixXd &R0,
 
         J_THpd_eps += H_A * R0 * p.row(i).transpose() * J_d_eps;
         MatrixXd J_hTHpd_eps = H_A.transpose() * J_THpd_eps;
+
+        MatrixXd _X0 = R0 * pd0 + t0;
+        double _xz = _X0(2, 0);
+        MatrixXd J_Pi_X = MatrixXd::Zero(3, 3);
+
+        if(_xz != 0){
+            double _xz2 = _xz * _xz;
+            J_Pi_X << 1.0 / _xz, 0, -_X0(0, 0) / _xz2,
+                      0, 1.0 / _xz, -_X0(1, 0) / _xz2,
+                      0,         0,                 0;
+        } else {
+            cout << "Found point with z = 0." << endl;
+        }
+
+        MatrixXd J_PihTHpd_eps = J_Pi_X * J_hTHpd_eps;
+        MatrixXd p_0(3, 1);
+        p_0 << _X0(0, 0) / _xz,
+               _X0(1, 0) / _xz,
+                             1;
+        p_0 = p_0 - p_.row(i).transpose();
+        
+        MatrixXd J_norm_x = sqrt((p_0.transpose() * p_0)(0, 0)) * p_0.transpose();
+        J_r_eps.row(i) = J_norm_x * J_PihTHpd_eps;
     }
+    cout << J_r_eps << endl;
 }
 
 int main(){
