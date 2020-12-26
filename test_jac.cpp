@@ -201,14 +201,16 @@ int main(){
     VectorXd ep0(3), ep(3);
 
     const double pi = Sophus::Constants<double>::pi();
-    Sophus::SO3d Ry = Sophus::SO3d::rotY(pi / 6);
+    Sophus::SO3d Ry = Sophus::SO3d::rotY(pi / 9);
     R = Ry.matrix();
     t << 0, 0, 1;
     ep = R.inverse() * t;
 
-    R0 = Ry.matrix();
-    //t0 << 0.5, 0.5, sqrt(1.0 - 2.0 * pow(0.5, 2.0));
+    R0 = Sophus::SO3d::rotY(0.0).matrix();
+    //R0 = Ry.matrix();
     t0 << 0, 0, 1;
+    //t0 = VectorXd::Random(3, 1);
+    //t0 = t0 / t0.norm();
     ep0 = R.inverse() * t;
 
     MatrixXd X = 100.0 * MatrixXd::Random(N, 3);
@@ -230,10 +232,11 @@ int main(){
     MatrixXd delta_T = MatrixXd::Zero(4, 4);
     MatrixXd H = MatrixXd::Zero(9, 9);
     MatrixXd b = MatrixXd::Zero(9, 1);
-    double lambda = 5; //0.01;
+    double lambda = 0.01;
     double prev_E = 1E10;
+    double epsilon = 1E-8;
 
-    for(int i = 0; i < 20; i++){
+    for(int i = 0; i < 60; i++){
         res(R0, t0, ep0, p, p_, r0);
         Dr_Deps(R0, t0, ep0, p, p_, J);
         
@@ -249,8 +252,11 @@ int main(){
         delta = -1E0 * H.block<6, 6>(0, 0).inverse() * b.block<6, 1>(0, 0);
         delta_T = Sophus::SE3<double>::exp(delta).matrix();
 
-        cout << i << " " << H.norm() << " " << r0.norm() << " " << H.block<6, 6>(0, 0).inverse().norm() << endl;
+        if(delta.norm() < epsilon){
+            break;
+        }
 
+        cout << i << " " << H.norm() << " " << r0.norm() << " " << delta.norm() << endl;
         //cout << delta.transpose() << endl << delta_T << endl << endl;
 
         MatrixXd t0_ = t0 + R0 * delta_T.block<3, 1>(0, 3);
@@ -269,7 +275,7 @@ int main(){
     }
 
     cout << endl;
-    cout << (R - R0).norm() << endl; // << R << endl << R0 << endl;
+    cout << (R - R0).norm() << endl << R << endl << R0 << endl;
     cout << endl;
-    cout << (t - t0).norm() << endl; // << t << endl << t0 << endl;
+    cout << (t - t0).norm() << endl << t << endl << t0 << endl;
 }
