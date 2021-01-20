@@ -7,6 +7,8 @@
 using namespace std;
 using namespace Eigen;
 
+const double huber_delta = 0.1;
+
 int Dr_Deps(const MatrixXd &R0,
             const VectorXd &t0,
             const VectorXd &ep0,
@@ -157,14 +159,14 @@ int Dr_Deps(const MatrixXd &R0,
         
         //MatrixXd J_norm_x = sqrt((p_0.transpose() * p_0)(0, 0)) * p_0.transpose();
         MatrixXd J_norm2_x = 2 * p_0.transpose();
-        J_r_eps.row(i) = J_norm2_x * J_PihTHpd_eps;
+        //J_r_eps.row(i) = J_norm2_x * J_PihTHpd_eps;
+        MatrixXd J_norm1_x = p_0.transpose() / p_0.norm();
 
-        // J_r_ep
-        //MatrixXd J_A_ep = _p * R0;
-        //MatrixXd J_d_ep = _sqBTB * _sqATA * AT * J_A_ep;
-        //MatrixXd J_THpd_ep = R0 * p.row(i).transpose() * J_d_ep;
-        //MatrixXd J_PihTHpd_ep = J_Pi_X * J_THpd_ep;
-        //J_r_eps.block<1, 3>(i, 6) = J_norm2_x * J_PihTHpd_ep; // BUG
+        if((p_0.transpose() * p_0)(0, 0) <= huber_delta){
+            J_r_eps.row(i) = J_norm2_x * J_PihTHpd_eps / 2.0;
+        } else {
+            J_r_eps.row(i) = huber_delta * J_norm1_x * J_PihTHpd_eps;
+        }
     }
 }
 
@@ -210,7 +212,11 @@ int res(const MatrixXd &R0,
         MatrixXd p__ = X_ / X_(2, 0);
         //r(i, 0) = (p_.row(i).transpose() - p__).norm();
         MatrixXd diff = (p_.row(i).transpose() - p__);
-        r(i, 0) = (diff.transpose() * diff)(0, 0);
+        //r(i, 0) = (diff.transpose() * diff)(0, 0);
+        r(i, 0) = (diff.transpose() * diff)(0, 0) / 2.0;
+        if(r(i, 0) > huber_delta){
+            r(i, 0) = huber_delta * (sqrt(r(i, 0)) - huber_delta / 2.0);
+        }
     }
 }
 
@@ -232,11 +238,11 @@ int main(){
     t = 10.0 * MatrixXd::Random(3, 1);
     ep = R.inverse() * t;
 
-    double noise = 2E-1 * (0.5 - (double) rand() / (RAND_MAX));
+    double noise = 5E-1 * (0.5 - (double) rand() / (RAND_MAX));
     Sophus::SO3d Rx_noise = Sophus::SO3d::rotX(noise);
-    noise = 2E-1 * (0.5 - (double) rand() / (RAND_MAX));
+    noise = 5E-1 * (0.5 - (double) rand() / (RAND_MAX));
     Sophus::SO3d Ry_noise = Sophus::SO3d::rotY(noise);
-    noise = 2E-1 * (0.5 - (double) rand() / (RAND_MAX));
+    noise = 5E-1 * (0.5 - (double) rand() / (RAND_MAX));
     Sophus::SO3d Rz_noise = Sophus::SO3d::rotZ(noise);
     R0 = R * (Rx_noise.matrix() * Ry_noise.matrix() * Rz_noise.matrix());
     t0 = t + 1E-2 * VectorXd::Random(3, 1);
