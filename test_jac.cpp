@@ -154,7 +154,8 @@ int Dr_Deps(const MatrixXd &R0,
         MatrixXd J_d_ep = _sqBTB * _sqATA * AT * J_A_ep;
         MatrixXd J_THpd_ep = R0 * p.row(i).transpose() * J_d_ep;
         MatrixXd J_PihTHpd_ep = J_Pi_X * J_THpd_ep;
-        J_r_eps.block<1, 3>(i, 6) = J_norm2_x * J_PihTHpd_ep; // BUG
+        J_r_eps.block<1, 3>(i, 6) = J_norm2_x * J_PihTHpd_ep;
+        //J_r_eps.block<1, 3>(i, 6) = J_norm2_x * J_PihTHpd_ep - 1E-5 * 2 * ep0.transpose();
     }
 }
 
@@ -213,25 +214,25 @@ int main(){
 
     const double pi = Sophus::Constants<double>::pi();
     double r = 2.0 * (0.5 - (double) rand() / (RAND_MAX));
-    Sophus::SO3d Ry = Sophus::SO3d::rotY(r * pi / 6);
-    R = Ry.matrix();
-    //t << 0.2, 0.1, 1;
+    Sophus::SO3d Rx = Sophus::SO3d::rotX(r * pi / 4);
+    r = 2.0 * (0.5 - (double) rand() / (RAND_MAX));
+    Sophus::SO3d Ry = Sophus::SO3d::rotY(r * pi / 4);
+    r = 2.0 * (0.5 - (double) rand() / (RAND_MAX));
+    Sophus::SO3d Rz = Sophus::SO3d::rotZ(r * pi / 4);
+    R = Rx.matrix() * Ry.matrix() * Rz.matrix();
     t = 10.0 * MatrixXd::Random(3, 1);
-    // t = t / t.norm();
     ep = R.inverse() * t;
 
-    double noise = 1E0 * (0.5 - (double) rand() / (RAND_MAX));
+    double noise = 1E-1 * (0.5 - (double) rand() / (RAND_MAX));
+    Sophus::SO3d Rx_noise = Sophus::SO3d::rotX(noise);
+    noise = 1E-1 * (0.5 - (double) rand() / (RAND_MAX));
     Sophus::SO3d Ry_noise = Sophus::SO3d::rotY(noise);
-    //R0 = Sophus::SO3d::rotY(0.0).matrix();
-    R0 = R * Ry_noise.matrix();
-    //R0 = Ry.matrix();
-    //t0 << 0, 0, 1;
-    t0 = t + 1E0 * VectorXd::Random(3, 1);
-    //t0 = t0 / t0.norm();
-    //ep0 = R.inverse() * t;
-    //ep0 = R0.inverse() * t0;
-    ep0 << 0, 0, 1;
-    
+    noise = 1E-1 * (0.5 - (double) rand() / (RAND_MAX));
+    Sophus::SO3d Rz_noise = Sophus::SO3d::rotZ(noise);
+    R0 = R * (Rx_noise.matrix() * Ry_noise.matrix() * Rz_noise.matrix());
+    t0 = t + 1E-2 * VectorXd::Random(3, 1);
+    ep0 = R0.inverse() * t0;
+
     MatrixXd X = 100.0 * MatrixXd::Random(N, 3);
     MatrixXd p = MatrixXd::Zero(N, 3);
     MatrixXd p_ = MatrixXd::Zero(N, 3);
@@ -265,16 +266,9 @@ int main(){
         H = J.transpose() * J;
         H = H + lambda * H.diagonal().asDiagonal().toDenseMatrix();
 
-        //if(H.norm() < 1E-4){
-        //    cout << J << endl << endl;
-        //    //break;
-        //}
-
         //delta = - H.block<6, 6>(0, 0).inverse() * b.block<6, 1>(0, 0);
         //delta_T = Sophus::SE3<double>::exp(delta).matrix();
-        //cout << delta.transpose() << endl;
         delta = - H.inverse() * b;
-        //cout << delta.block<6, 1>(0, 0).transpose() << endl;
         delta_T = Sophus::SE3<double>::exp(delta.block<6, 1>(0, 0)).matrix();
         delta_ep = delta.block<3, 1>(6, 0);
 
@@ -287,7 +281,6 @@ int main(){
              << " " << r0.norm()
              << " " << delta.norm()
              << " " << lambda << endl;
-        //cout << delta.transpose() << endl << delta_T << endl << endl;
 
         MatrixXd t0_ = t0 + R0 * delta_T.block<3, 1>(0, 3);
         MatrixXd R0_ = R0 * delta_T.block<3, 3>(0, 0);
@@ -312,7 +305,17 @@ int main(){
     }
 
     cout << endl;
-    cout << (R - R0).norm() << endl << R << endl << R0 << endl;
+    cout << (R - R0).norm() << endl;
     cout << endl;
-    cout << (t - t0).norm() << endl << t << endl << t0 << endl;
+    cout << t.transpose() << endl;
+    cout << t0.transpose() << endl;
+    cout << t(0, 0) / t0(0, 0) << " "
+         << t(1, 0) / t0(1, 0) << " "
+         << t(2, 0) / t0(2, 0) << endl;
+    cout << endl;
+    cout << ep.transpose() << endl;
+    cout << ep0.transpose() << endl;
+    cout << ep(0, 0) / ep0(0, 0) << " "
+         << ep(1, 0) / ep0(1, 0) << " "
+         << ep(2, 0) / ep0(2, 0) << endl;
 }

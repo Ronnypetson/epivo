@@ -102,7 +102,8 @@ int Dr_Deps(const MatrixXd &R0,
 
         MatrixXd J_t_eps = MatrixXd::Zero(3, eps_dim);
         J_t_eps = R0 * J_expe_eps_3xD;
-        J_A_eps += _p * R0 * J_t_eps;
+        //J_A_eps += _p * R0 * J_t_eps;
+        J_A_eps += _p * J_t_eps;
 
         double ATA = (A.transpose() * A)(0, 0);
         double BTB = (B.transpose() * B)(0, 0);
@@ -222,24 +223,29 @@ int main(){
 
     const double pi = Sophus::Constants<double>::pi();
     double r = 2.0 * (0.5 - (double) rand() / (RAND_MAX));
-    Sophus::SO3d Rx = Sophus::SO3d::rotY(r * pi / 6);
+    Sophus::SO3d Rx = Sophus::SO3d::rotX(r * pi / 4);
     r = 2.0 * (0.5 - (double) rand() / (RAND_MAX));
-    Sophus::SO3d Ry = Sophus::SO3d::rotY(r * pi / 6);
+    Sophus::SO3d Ry = Sophus::SO3d::rotY(r * pi / 4);
     r = 2.0 * (0.5 - (double) rand() / (RAND_MAX));
-    Sophus::SO3d Rz = Sophus::SO3d::rotY(r * pi / 6);
+    Sophus::SO3d Rz = Sophus::SO3d::rotZ(r * pi / 4);
     R = Rx.matrix() * Ry.matrix() * Rz.matrix();
     t = 10.0 * MatrixXd::Random(3, 1);
     ep = R.inverse() * t;
 
-    double noise = 1E0 * (0.5 - (double) rand() / (RAND_MAX));
-    Sophus::SO3d Rx_noise = Sophus::SO3d::rotY(noise);
-    noise = 1E0 * (0.5 - (double) rand() / (RAND_MAX));
+    double noise = 2E-1 * (0.5 - (double) rand() / (RAND_MAX));
+    Sophus::SO3d Rx_noise = Sophus::SO3d::rotX(noise);
+    noise = 2E-1 * (0.5 - (double) rand() / (RAND_MAX));
     Sophus::SO3d Ry_noise = Sophus::SO3d::rotY(noise);
-    noise = 1E0 * (0.5 - (double) rand() / (RAND_MAX));
-    Sophus::SO3d Rz_noise = Sophus::SO3d::rotY(noise);
+    noise = 2E-1 * (0.5 - (double) rand() / (RAND_MAX));
+    Sophus::SO3d Rz_noise = Sophus::SO3d::rotZ(noise);
     R0 = R * (Rx_noise.matrix() * Ry_noise.matrix() * Rz_noise.matrix());
-    t0 = t + 1E0 * VectorXd::Random(3, 1);
+    t0 = t + 1E-2 * VectorXd::Random(3, 1);
     ep0 = R0.inverse() * t0;
+
+    //cout << R << endl;
+    //cout << endl;
+    //cout << R0 << endl;
+    //return 0;
 
     MatrixXd X = 100.0 * MatrixXd::Random(N, 3);
     MatrixXd p = MatrixXd::Zero(N, 3);
