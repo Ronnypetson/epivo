@@ -236,17 +236,17 @@ int main(){
     r = 2.0 * (0.5 - (double) rand() / (RAND_MAX));
     Sophus::SO3d Rz = Sophus::SO3d::rotZ(r * pi / 4);
     R = Rx.matrix() * Ry.matrix() * Rz.matrix();
-    t = 10.0 * MatrixXd::Random(3, 1);
+    t = 100.0 * MatrixXd::Random(3, 1);
     //ep = R.inverse() * t;
 
-    double noise = 5E-1 * (0.5 - (double) rand() / (RAND_MAX));
+    double noise = 1E-1 * (0.5 - (double) rand() / (RAND_MAX));
     Sophus::SO3d Rx_noise = Sophus::SO3d::rotX(noise);
-    noise = 5E-1 * (0.5 - (double) rand() / (RAND_MAX));
+    noise = 1E-1 * (0.5 - (double) rand() / (RAND_MAX));
     Sophus::SO3d Ry_noise = Sophus::SO3d::rotY(noise);
-    noise = 5E-1 * (0.5 - (double) rand() / (RAND_MAX));
+    noise = 1E-1 * (0.5 - (double) rand() / (RAND_MAX));
     Sophus::SO3d Rz_noise = Sophus::SO3d::rotZ(noise);
     R0 = R * (Rx_noise.matrix() * Ry_noise.matrix() * Rz_noise.matrix());
-    t0 = t + 1E-2 * VectorXd::Random(3, 1);
+    t0 = t + 1E1 * VectorXd::Random(3, 1);
     //ep0 = R0.inverse() * t0;
 
     MatrixXd X = 100.0 * MatrixXd::Random(N, 3);
