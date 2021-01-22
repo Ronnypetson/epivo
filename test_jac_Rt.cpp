@@ -7,11 +7,11 @@
 using namespace std;
 using namespace Eigen;
 
-const double huber_delta = 0.1;
+const double huber_delta = 1.0;
 
 int Dr_Deps(const MatrixXd &R0,
             const VectorXd &t0,
-            const VectorXd &ep0,
+            //const VectorXd &ep0,
             const MatrixXd &p,
             const MatrixXd &p_,
             MatrixXd &J_r_eps){
@@ -20,19 +20,19 @@ int Dr_Deps(const MatrixXd &R0,
     // R0 (3,3), t0 (3), and ep0 (3) are the current values
     // eps order: tr (3), rot (3), ep (3)
     assert(t0.size() == 3);
-    assert(ep0.size() == 3);
+    //assert(ep0.size() == 3);
     assert(R0.rows() == 3);
     assert(R0.cols() == 3);
     assert(p.cols() == 3);
     assert(p_.cols() == 3);
     const int n = p.rows();
-    const int eps_dim = 9;
+    const int eps_dim = 6;
     assert(J_r_eps.cols() == eps_dim);
     assert(n > 0);
     assert(p_.rows() == n);
     assert(J_r_eps.rows() == n);
 
-    MatrixXd J_expw_eps = MatrixXd::Zero(9, 9); // 0_9x3 J_expw_w 0_9x3
+    MatrixXd J_expw_eps = MatrixXd::Zero(9, 6); // 0_9x3 J_expw_w 0_9x3
     MatrixXd _J_expw_eps(9, 3);
     _J_expw_eps << 0, 0, 0,
                    0, 0, 1,
@@ -48,7 +48,7 @@ int Dr_Deps(const MatrixXd &R0,
     J_expw_eps.col(4) = _J_expw_eps.col(1);
     J_expw_eps.col(5) = _J_expw_eps.col(2);
 
-    MatrixXd J_expe_eps = MatrixXd::Zero(12, 9);
+    MatrixXd J_expe_eps = MatrixXd::Zero(12, 6);
     J_expe_eps.block<9, 3>(0, 3) = _J_expw_eps;
     J_expe_eps.block<3, 3>(9, 0) = MatrixXd::Identity(3, 3);
 
@@ -82,7 +82,7 @@ int Dr_Deps(const MatrixXd &R0,
         _p(0, 2) = -p_(i, 0);
         _p(1, 2) = -p_(i, 1);
         MatrixXd A(2, 1), B(2, 1);
-        A = _p * R0 * ep0;
+        A = _p * t0;
         B = _p * R0 * p.row(i).transpose();
         
         // t0 .. t2 r0 .. r2 e0 .. e2
@@ -98,13 +98,14 @@ int Dr_Deps(const MatrixXd &R0,
         MatrixXd J_A_eps = MatrixXd::Zero(2, eps_dim);
         MatrixXd J_B_eps = MatrixXd::Zero(2, eps_dim);
         for(int j = 0; j < 6; j++){
-            J_A_eps.col(j) = J_C_eps[j] * ep0;
+            //J_A_eps.col(j) = J_C_eps[j] * ep0;
             J_B_eps.col(j) = J_C_eps[j] * p.row(i).transpose();
         }
 
         MatrixXd J_t_eps = MatrixXd::Zero(3, eps_dim);
         J_t_eps = R0 * J_expe_eps_3xD;
         //J_A_eps += _p * R0 * J_t_eps;
+
         J_A_eps += _p * J_t_eps;
 
         double ATA = (A.transpose() * A)(0, 0);
@@ -172,13 +173,13 @@ int Dr_Deps(const MatrixXd &R0,
 
 int res(const MatrixXd &R0,
         const VectorXd &t0,
-        const VectorXd &ep0,
+        //const VectorXd &ep0,
         const MatrixXd &p,
         const MatrixXd &p_,
         MatrixXd &r){
     // r (N,1) is the resulting scalar residuals
     assert(t0.size() == 3);
-    assert(ep0.size() == 3);
+    //assert(ep0.size() == 3);
     assert(R0.rows() == 3);
     assert(R0.cols() == 3);
     assert(p.cols() == 3);
@@ -197,7 +198,7 @@ int res(const MatrixXd &R0,
         _p(1, 2) = -p_(i, 1);
         MatrixXd A(2, 1), B(2, 1);
 
-        A = _p * R0 * ep0; // point R0, inverse ep0
+        A = _p * t0; // point R0, inverse ep0
         B = _p * R0 * p.row(i).transpose();
         double d = 0;
 
@@ -223,9 +224,9 @@ int res(const MatrixXd &R0,
 int main(){
     srand(time(0));
     const int N = 15;
-    MatrixXd R0(3, 3), R(3, 3);
-    VectorXd t0(3), t(3);
-    VectorXd ep0(3), ep(3);
+    MatrixXd R0(3, 3), R(3, 3), pR(3, 3);
+    VectorXd t0(3), t(3), pt(3);
+    //VectorXd ep0(3), ep(3);
 
     const double pi = Sophus::Constants<double>::pi();
     double r = 2.0 * (0.5 - (double) rand() / (RAND_MAX));
@@ -236,7 +237,7 @@ int main(){
     Sophus::SO3d Rz = Sophus::SO3d::rotZ(r * pi / 4);
     R = Rx.matrix() * Ry.matrix() * Rz.matrix();
     t = 10.0 * MatrixXd::Random(3, 1);
-    ep = R.inverse() * t;
+    //ep = R.inverse() * t;
 
     double noise = 5E-1 * (0.5 - (double) rand() / (RAND_MAX));
     Sophus::SO3d Rx_noise = Sophus::SO3d::rotX(noise);
@@ -246,12 +247,7 @@ int main(){
     Sophus::SO3d Rz_noise = Sophus::SO3d::rotZ(noise);
     R0 = R * (Rx_noise.matrix() * Ry_noise.matrix() * Rz_noise.matrix());
     t0 = t + 1E-2 * VectorXd::Random(3, 1);
-    ep0 = R0.inverse() * t0;
-
-    //cout << R << endl;
-    //cout << endl;
-    //cout << R0 << endl;
-    //return 0;
+    //ep0 = R0.inverse() * t0;
 
     MatrixXd X = 100.0 * MatrixXd::Random(N, 3);
     MatrixXd p = MatrixXd::Zero(N, 3);
@@ -268,26 +264,26 @@ int main(){
     }
 
     MatrixXd r0 = MatrixXd::Zero(N, 1);
-    MatrixXd J = MatrixXd::Zero(N, 9);
-    MatrixXd delta = MatrixXd::Zero(9, 1);
+    MatrixXd J = MatrixXd::Zero(N, 6);
+    MatrixXd delta = MatrixXd::Zero(6, 1);
     MatrixXd delta_T = MatrixXd::Zero(4, 4);
-    MatrixXd delta_ep = MatrixXd::Zero(3, 1);
-    MatrixXd H = MatrixXd::Zero(9, 9);
-    MatrixXd b = MatrixXd::Zero(9, 1);
+    //MatrixXd delta_ep = MatrixXd::Zero(3, 1);
+    MatrixXd H = MatrixXd::Zero(6, 6);
+    MatrixXd b = MatrixXd::Zero(6, 1);
     double lambda = 0.01;
     double prev_E = 1E10;
     double epsilon = 1E-8;
 
     for(int i = 0; i < 60; i++){
-        ep0 = R0.inverse() * t0;
-        res(R0, t0, ep0, p, p_, r0);
-        Dr_Deps(R0, t0, ep0, p, p_, J);
+        //ep0 = R0.inverse() * t0;
+        res(R0, t0, p, p_, r0);
+        Dr_Deps(R0, t0, p, p_, J);
 
         b = J.transpose() * r0;
         H = J.transpose() * J;
         H = H + lambda * H.diagonal().asDiagonal().toDenseMatrix();
 
-        delta = - H.block<6, 6>(0, 0).inverse() * b.block<6, 1>(0, 0);
+        delta = - H.inverse() * b;
         delta_T = Sophus::SE3<double>::exp(delta).matrix();
         //delta = - H.inverse() * b;
         //delta_T = Sophus::SE3<double>::exp(delta.block<6, 1>(0, 0)).matrix();
@@ -308,7 +304,8 @@ int main(){
         //MatrixXd ep0_ = R0_.inverse() * t0_; // DELET
         //MatrixXd ep0_ = ep0 + delta_ep;
 
-        res(R0_, t0_, R0_.inverse() * t0_, p, p_, r0);
+        res(R0_, t0_, p, p_, r0);
+        //res(R0_, t0_, t0_, p, p_, r0);
         //res(R0_, t0_, ep0_, p, p_, r0);
         //res(R0_, t0_, ep0_, p, p_, r0); // DELET
 
