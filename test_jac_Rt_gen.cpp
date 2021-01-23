@@ -252,16 +252,12 @@ void RepJacobian::compute(const MatrixXd &p,
     MatrixXd Tl0 = MatrixXd::Identity(4, 4);
     MatrixXd Tr0 = MatrixXd::Identity(4, 4);
 
-    if(this->source_id == this->target_id){
-        Tl0 = T0s[this->zeta_id];
-    } else {
-        for(int i = this->source_id; i < this->zeta_id; i++){
-            Tr0 = T0s[i] * Tr0;
-        }
+    for(int i = this->source_id; i < this->zeta_id; i++){
+        Tr0 = T0s[i] * Tr0;
+    }
 
-        for(int i = this->zeta_id; i <= this->target_id; i++){
-            Tl0 = T0s[i] * Tl0;
-        }
+    for(int i = this->zeta_id; i <= this->target_id; i++){
+        Tl0 = T0s[i] * Tl0;
     }
 
     Dr_Deps(Tl0, Tr0, p, p_, J_r_eps);
@@ -270,7 +266,7 @@ void RepJacobian::compute(const MatrixXd &p,
 int main(){
     srand(time(0));
     const int N = 15;
-    const int n_zeta = 2;
+    const int n_zeta = 3;
     const int n_rep = n_zeta * (n_zeta + 1) / 2;
     vector<pair<int, int> > reps; // First zeta, last zeta. NOT first and last frames
     double epsilon = 1E-8;
@@ -292,22 +288,20 @@ int main(){
         int z0, z1;
         z0 = reps[i].first;
         z1 = reps[i].second;
+        
+        //cout << z0 << " " << z1 << endl << endl;
+
         MatrixXd T = MatrixXd::Identity(4, 4); // composed T
         MatrixXd T0 = MatrixXd::Identity(4, 4); // composed T0
         MatrixXd R0(3, 3), t0(3, 1);
 
-        if(z0 == z1){
-            T = Ts[z0];
-            T0 = T0s[z0];
-        } else {
-            for(int j = z0; j <= z1; j++){
-                T = Ts[j] * T;
-                T0 = T0s[j] * T0;
-            }
+        for(int j = z0; j <= z1; j++){
+            T = Ts[j] * T;
+            T0 = T0s[j] * T0;
         }
         gen_points(N, T, X, p, p_);
 
-        int zeta_dims = n_zeta * eps_dim;
+        int zeta_dims = (z1 - z0 + 1) * eps_dim;
         MatrixXd r0 = MatrixXd::Zero(N, 1);
         MatrixXd J = MatrixXd::Zero(N, zeta_dims);
         MatrixXd H = MatrixXd::Zero(zeta_dims, zeta_dims);
@@ -323,20 +317,12 @@ int main(){
             t0 = T0.block<3, 1>(0, 3);
             res(R0, t0, p, p_, r0);
 
-            //Dr_Deps(Tl0, Tr0, p, p_, J); // replace
-            for(int k = 0; k < n_zeta; k++){
+            for(int k = z0; k <= z1; k++){
                 // Compute J_res_zeta
                 MatrixXd Jz = MatrixXd::Zero(N, eps_dim);
-                if(k <= z1){
-                    RepJacobian Jr(k,  z0, z1);
-                    Jr.compute(p, p_, T0s, Jz);
-                    J.block<N, eps_dim>(0, k * eps_dim) = Jz;
-                } else {
-                    J.block<N, eps_dim>(0, k * eps_dim) = Jz;
-                }
-                cout << z0 << " " << k << " " << z1 << endl;
-                //RepJacobian Jr(k,  z0, z1);
-                //Jr.compute(p, p_, T0s, Jz);
+                RepJacobian Jr(k, z0, z1);
+                Jr.compute(p, p_, T0s, Jz);
+                J.block<N, eps_dim>(0, (k - z0) * eps_dim) = Jz;
             }
 
             b = J.transpose() * r0;
@@ -347,8 +333,8 @@ int main(){
 
             vector<MatrixXd> T0s_;
             MatrixXd T0_ = MatrixXd::Identity(4, 4); // composite new T0
-            for(int k = 0; k < n_zeta; k++){
-                MatrixXd delta_k = delta.block<eps_dim, 1>(k * eps_dim, 0);
+            for(int k = z0; k <= z1; k++){
+                MatrixXd delta_k = delta.block<eps_dim, 1>((k - z0) * eps_dim, 0);
                 MatrixXd delta_T = Sophus::SE3<double>::exp(delta_k).matrix();
                 MatrixXd new_T = T0s[k] * delta_T;
                 T0s_.push_back(new_T);
@@ -359,14 +345,6 @@ int main(){
                 break;
             }
 
-            // cout << j
-            //     << " " << H.norm()
-            //     << " " << r0.norm()
-            //     << " " << delta.norm()
-            //     << " " << lambda << endl;
-
-            //MatrixXd t0_ = t0 + R0 * delta_T.block<3, 1>(0, 3);
-            //MatrixXd R0_ = R0 * delta_T.block<3, 3>(0, 0);
             MatrixXd t0_ = T0_.block<3, 1>(0, 3);
             MatrixXd R0_ = T0_.block<3, 3>(0, 0);
 
@@ -375,24 +353,44 @@ int main(){
             double curr_E = r0.norm();
             if(curr_E < prev_E){
                 prev_E = curr_E;
-                
-                for(int k = 0; k < n_zeta; k++){
-                    T0s[k] = T0s_[k];
+
+                for(int k = z0; k <= z1; k++){
+                    T0s[k] = T0s_[k - z0];
                 }
 
-                //R0 = R0_;
-                //t0 = t0_;
-                //Tl0.block<3, 3>(0, 0) = R0_;
-                //Tl0.block<3, 1>(0, 3) = t0_;
+                T0 = T0_;
 
                 lambda /= 2.0;
             } else {
                 lambda *= 5.0;
             }
         }
+
+        cout << " " << H.norm()
+             << " " << r0.norm()
+             << " " << delta.norm()
+             << " " << lambda << endl;
+
+        cout << endl;
     }
 
-    // return 0;
+    MatrixXd R, t, R0, t0;
+    for(int i = 0; i < n_zeta; i++){
+        R = Ts[i].block<3, 3>(0, 0);
+        t = Ts[i].block<3, 1>(0, 3);
+
+        R0 = T0s[i].block<3, 3>(0, 0);
+        t0 = T0s[i].block<3, 1>(0, 3);
+
+        cout << endl;
+        cout << (R - R0).norm() << endl;
+        cout << endl;
+        cout << t.transpose() << endl;
+        cout << t0.transpose() << endl;
+        cout << t(0, 0) / t0(0, 0) << " "
+             << t(1, 0) / t0(1, 0) << " "
+             << t(2, 0) / t0(2, 0) << endl;
+    }
 
     // MatrixXd R0(3, 3), R(3, 3); //, pR(3, 3);
     // VectorXd t0(3), t(3); //, pt(3);
