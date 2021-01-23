@@ -135,7 +135,7 @@ int Dr_Deps(const MatrixXd &R0,
             //J_THpd_eps.col(j) = H_A * (R0 * J_expe_eps_34[j] * Hpd0 + t0);
         }
 
-        J_THpd_eps += H_A * R0 * p.row(i).transpose() * J_d_eps;
+        J_THpd_eps += H_A * R0 * p.row(i).transpose() * J_d_eps; // check again
         MatrixXd J_hTHpd_eps = H_A.transpose() * J_THpd_eps;
 
         MatrixXd _X0 = R0 * pd0 + t0;
@@ -223,21 +223,20 @@ int res(const MatrixXd &R0,
 
 int main(){
     srand(time(0));
-    const int N = 15;
+    const int N = 5000;
     MatrixXd R0(3, 3), R(3, 3), pR(3, 3);
     VectorXd t0(3), t(3), pt(3);
     //VectorXd ep0(3), ep(3);
 
     const double pi = Sophus::Constants<double>::pi();
     double r = 2.0 * (0.5 - (double) rand() / (RAND_MAX));
-    Sophus::SO3d Rx = Sophus::SO3d::rotX(r * pi / 4);
+    Sophus::SO3d Rx = Sophus::SO3d::rotX(r * pi / 6);
     r = 2.0 * (0.5 - (double) rand() / (RAND_MAX));
-    Sophus::SO3d Ry = Sophus::SO3d::rotY(r * pi / 4);
+    Sophus::SO3d Ry = Sophus::SO3d::rotY(r * pi / 6);
     r = 2.0 * (0.5 - (double) rand() / (RAND_MAX));
-    Sophus::SO3d Rz = Sophus::SO3d::rotZ(r * pi / 4);
+    Sophus::SO3d Rz = Sophus::SO3d::rotZ(r * pi / 6);
     R = Rx.matrix() * Ry.matrix() * Rz.matrix();
     t = 100.0 * MatrixXd::Random(3, 1);
-    //ep = R.inverse() * t;
 
     double noise = 1E-1 * (0.5 - (double) rand() / (RAND_MAX));
     Sophus::SO3d Rx_noise = Sophus::SO3d::rotX(noise);
@@ -247,8 +246,8 @@ int main(){
     Sophus::SO3d Rz_noise = Sophus::SO3d::rotZ(noise);
     R0 = R * (Rx_noise.matrix() * Ry_noise.matrix() * Rz_noise.matrix());
     t0 = t + 1E1 * VectorXd::Random(3, 1);
-    //ep0 = R0.inverse() * t0;
-
+    t0 = t0 / t0.norm();
+    
     MatrixXd X = 100.0 * MatrixXd::Random(N, 3);
     MatrixXd p = MatrixXd::Zero(N, 3);
     MatrixXd p_ = MatrixXd::Zero(N, 3);

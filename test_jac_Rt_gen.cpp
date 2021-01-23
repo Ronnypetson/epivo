@@ -1,8 +1,11 @@
+#include <utility>
 #include <iostream>
 #include <Eigen/Dense>
 #include <vector>
 #include <math.h>
 #include "sophus/geometry.hpp"
+#include "test_jac_Rt_gen.hpp"
+#include "sequence.hpp"
 
 using namespace std;
 using namespace Eigen;
@@ -194,7 +197,6 @@ int Dr_Deps(const MatrixXd &Tl0,
 
 int res(const MatrixXd &R0,
         const VectorXd &t0,
-        //const VectorXd &ep0,
         const MatrixXd &p,
         const MatrixXd &p_,
         MatrixXd &r){
@@ -242,116 +244,227 @@ int res(const MatrixXd &R0,
     }
 }
 
+void RepJacobian::compute(const MatrixXd &p,
+                          const MatrixXd &p_,
+                          const vector<MatrixXd> &T0s,
+                          MatrixXd &J_r_eps){
+    // T0s are ordered in camera frame order
+    MatrixXd Tl0 = MatrixXd::Identity(4, 4);
+    MatrixXd Tr0 = MatrixXd::Identity(4, 4);
+
+    if(this->source_id == this->target_id){
+        Tl0 = T0s[this->zeta_id];
+    } else {
+        for(int i = this->source_id; i < this->zeta_id; i++){
+            Tr0 = T0s[i] * Tr0;
+        }
+
+        for(int i = this->zeta_id; i <= this->target_id; i++){
+            Tl0 = T0s[i] * Tl0;
+        }
+    }
+
+    Dr_Deps(Tl0, Tr0, p, p_, J_r_eps);
+}
+
 int main(){
     srand(time(0));
     const int N = 15;
-    MatrixXd R0(3, 3), R(3, 3), pR(3, 3);
-    VectorXd t0(3), t(3), pt(3);
-
-    const double pi = Sophus::Constants<double>::pi();
-    double r = 2.0 * (0.5 - (double) rand() / (RAND_MAX));
-    Sophus::SO3d Rx = Sophus::SO3d::rotX(r * pi / 6);
-    r = 2.0 * (0.5 - (double) rand() / (RAND_MAX));
-    Sophus::SO3d Ry = Sophus::SO3d::rotY(r * pi / 6);
-    r = 2.0 * (0.5 - (double) rand() / (RAND_MAX));
-    Sophus::SO3d Rz = Sophus::SO3d::rotZ(r * pi / 6);
-    R = Rx.matrix() * Ry.matrix() * Rz.matrix();
-    t = 100.0 * MatrixXd::Random(3, 1);
-
-    double noise = 1E-1 * (0.5 - (double) rand() / (RAND_MAX));
-    Sophus::SO3d Rx_noise = Sophus::SO3d::rotX(noise);
-    noise = 1E-1 * (0.5 - (double) rand() / (RAND_MAX));
-    Sophus::SO3d Ry_noise = Sophus::SO3d::rotY(noise);
-    noise = 1E-1 * (0.5 - (double) rand() / (RAND_MAX));
-    Sophus::SO3d Rz_noise = Sophus::SO3d::rotZ(noise);
-    R0 = R * (Rx_noise.matrix() * Ry_noise.matrix() * Rz_noise.matrix());
-    t0 = t + 1E1 * VectorXd::Random(3, 1);
-    t0 = t0 / t0.norm();
-    
-    MatrixXd Tl0 = MatrixXd::Identity(4, 4);
-    MatrixXd Tr0 = MatrixXd::Identity(4, 4);
-    Tl0.block<3, 3>(0, 0) = R0;
-    Tl0.block<3, 1>(0, 3) = t0;
-
-    MatrixXd X = 100.0 * MatrixXd::Random(N, 3);
-    MatrixXd p = MatrixXd::Zero(N, 3);
-    MatrixXd p_ = MatrixXd::Zero(N, 3);
-
-    for(int i = 0; i < N; i++){
-        if(X(i, 2) < 0.0){
-            X(i, 2) *= -1.0;
-            X(i, 2) += 10.0;
-        }
-        p.row(i) = X.row(i) / X(i, 2);
-        MatrixXd x_ = (R * X.row(i).transpose() + t).transpose();
-        p_.row(i) = x_ / x_(2);
-    }
-
-    MatrixXd r0 = MatrixXd::Zero(N, 1);
-    MatrixXd J = MatrixXd::Zero(N, 6);
-    MatrixXd delta = MatrixXd::Zero(6, 1);
-    MatrixXd delta_T = MatrixXd::Zero(4, 4);
-    //MatrixXd delta_ep = MatrixXd::Zero(3, 1);
-    MatrixXd H = MatrixXd::Zero(6, 6);
-    MatrixXd b = MatrixXd::Zero(6, 1);
-    double lambda = 0.01;
-    double prev_E = 1E10;
+    const int n_zeta = 2;
+    const int n_rep = n_zeta * (n_zeta + 1) / 2;
+    vector<pair<int, int> > reps; // First zeta, last zeta. NOT first and last frames
     double epsilon = 1E-8;
+    const int eps_dim = 6;
 
-    for(int i = 0; i < 60; i++){
-        //ep0 = R0.inverse() * t0;
-        res(R0, t0, p, p_, r0);
-        Dr_Deps(Tl0, Tr0, p, p_, J);
-
-        b = J.transpose() * r0;
-        H = J.transpose() * J;
-        H = H + lambda * H.diagonal().asDiagonal().toDenseMatrix();
-
-        delta = - H.inverse() * b;
-        delta_T = Sophus::SE3<double>::exp(delta).matrix();
-        //delta = - H.inverse() * b;
-        //delta_T = Sophus::SE3<double>::exp(delta.block<6, 1>(0, 0)).matrix();
-        //delta_ep = delta.block<3, 1>(6, 0);
-
-        if(delta.norm() < epsilon){
-            break;
-        }
-
-        cout << i
-             << " " << H.norm()
-             << " " << r0.norm()
-             << " " << delta.norm()
-             << " " << lambda << endl;
-
-        MatrixXd t0_ = t0 + R0 * delta_T.block<3, 1>(0, 3);
-        MatrixXd R0_ = R0 * delta_T.block<3, 3>(0, 0);
-        //MatrixXd ep0_ = R0_.inverse() * t0_; // DELET
-        //MatrixXd ep0_ = ep0 + delta_ep;
-
-        res(R0_, t0_, p, p_, r0);
-        //res(R0_, t0_, t0_, p, p_, r0);
-        //res(R0_, t0_, ep0_, p, p_, r0);
-        //res(R0_, t0_, ep0_, p, p_, r0); // DELET
-
-        double curr_E = r0.norm();
-        if(curr_E < prev_E){
-            prev_E = curr_E;
-            R0 = R0_;
-            t0 = t0_;
-            Tl0.block<3, 3>(0, 0) = R0_;
-            Tl0.block<3, 1>(0, 3) = t0_;
-            lambda /= 2.0;
-        } else {
-            lambda *= 5.0;
+    for(int i = 0; i < n_zeta; i++){
+        for(int j = i; j < n_zeta; j++){
+            reps.push_back(make_pair(i, j));
         }
     }
 
-    cout << endl;
-    cout << (R - R0).norm() << endl;
-    cout << endl;
-    cout << t.transpose() << endl;
-    cout << t0.transpose() << endl;
-    cout << t(0, 0) / t0(0, 0) << " "
-         << t(1, 0) / t0(1, 0) << " "
-         << t(2, 0) / t0(2, 0) << endl;
+    vector<MatrixXd> Ts;
+    gen_sequence(n_zeta, Ts);
+    vector<MatrixXd> T0s;
+    noise_sequence(Ts, T0s);
+
+    for(int i = 0; i < n_rep; i++){
+        MatrixXd X, p, p_;
+        int z0, z1;
+        z0 = reps[i].first;
+        z1 = reps[i].second;
+        MatrixXd T = MatrixXd::Identity(4, 4); // composed T
+        MatrixXd T0 = MatrixXd::Identity(4, 4); // composed T0
+        MatrixXd R0(3, 3), t0(3, 1);
+
+        if(z0 == z1){
+            T = Ts[z0];
+            T0 = T0s[z0];
+        } else {
+            for(int j = z0; j <= z1; j++){
+                T = Ts[j] * T;
+                T0 = T0s[j] * T0;
+            }
+        }
+        gen_points(N, T, X, p, p_);
+
+        int zeta_dims = n_zeta * eps_dim;
+        MatrixXd r0 = MatrixXd::Zero(N, 1);
+        MatrixXd J = MatrixXd::Zero(N, zeta_dims);
+        MatrixXd H = MatrixXd::Zero(zeta_dims, zeta_dims);
+        MatrixXd b = MatrixXd::Zero(zeta_dims, 1);
+        MatrixXd delta = MatrixXd::Zero(zeta_dims, 1);
+        //MatrixXd delta_T = MatrixXd::Zero(4, 4);
+
+        // Levenberg-Marquadt
+        double lambda = 0.01;
+        double prev_E = 1E10;
+        for(int j = 0; j < 60; j++){
+            R0 = T0.block<3, 3>(0, 0);
+            t0 = T0.block<3, 1>(0, 3);
+            res(R0, t0, p, p_, r0);
+
+            //Dr_Deps(Tl0, Tr0, p, p_, J); // replace
+            for(int k = 0; k < n_zeta; k++){
+                // Compute J_res_zeta
+                MatrixXd Jz = MatrixXd::Zero(N, eps_dim);
+                if(k <= z1){
+                    RepJacobian Jr(k,  z0, z1);
+                    Jr.compute(p, p_, T0s, Jz);
+                    J.block<N, eps_dim>(0, k * eps_dim) = Jz;
+                } else {
+                    J.block<N, eps_dim>(0, k * eps_dim) = Jz;
+                }
+                cout << z0 << " " << k << " " << z1 << endl;
+                //RepJacobian Jr(k,  z0, z1);
+                //Jr.compute(p, p_, T0s, Jz);
+            }
+
+            b = J.transpose() * r0;
+            H = J.transpose() * J;
+            H = H + lambda * H.diagonal().asDiagonal().toDenseMatrix();
+
+            delta = -H.inverse() * b;
+
+            vector<MatrixXd> T0s_;
+            MatrixXd T0_ = MatrixXd::Identity(4, 4); // composite new T0
+            for(int k = 0; k < n_zeta; k++){
+                MatrixXd delta_k = delta.block<eps_dim, 1>(k * eps_dim, 0);
+                MatrixXd delta_T = Sophus::SE3<double>::exp(delta_k).matrix();
+                MatrixXd new_T = T0s[k] * delta_T;
+                T0s_.push_back(new_T);
+                T0_ = new_T * T0_;
+            }
+
+            if(delta.norm() < epsilon){
+                break;
+            }
+
+            // cout << j
+            //     << " " << H.norm()
+            //     << " " << r0.norm()
+            //     << " " << delta.norm()
+            //     << " " << lambda << endl;
+
+            //MatrixXd t0_ = t0 + R0 * delta_T.block<3, 1>(0, 3);
+            //MatrixXd R0_ = R0 * delta_T.block<3, 3>(0, 0);
+            MatrixXd t0_ = T0_.block<3, 1>(0, 3);
+            MatrixXd R0_ = T0_.block<3, 3>(0, 0);
+
+            res(R0_, t0_, p, p_, r0);
+
+            double curr_E = r0.norm();
+            if(curr_E < prev_E){
+                prev_E = curr_E;
+                
+                for(int k = 0; k < n_zeta; k++){
+                    T0s[k] = T0s_[k];
+                }
+
+                //R0 = R0_;
+                //t0 = t0_;
+                //Tl0.block<3, 3>(0, 0) = R0_;
+                //Tl0.block<3, 1>(0, 3) = t0_;
+
+                lambda /= 2.0;
+            } else {
+                lambda *= 5.0;
+            }
+        }
+    }
+
+    // return 0;
+
+    // MatrixXd R0(3, 3), R(3, 3); //, pR(3, 3);
+    // VectorXd t0(3), t(3); //, pt(3);
+    // MatrixXd T0(4, 4), T(4, 4), Tn(4, 4);    
+
+    // gen_T(T);
+    // R = T.block<3, 3>(0, 0);
+    // t = T.block<3, 1>(0, 3);
+    // T_noise(Tn);
+    // T0 = T * Tn;
+    // R0 = T0.block<3, 3>(0, 0);
+    // t0 = T0.block<3, 1>(0, 3);
+    // t0 = t0 / t0.norm();
+    
+    // MatrixXd Tl0 = MatrixXd::Identity(4, 4);
+    // MatrixXd Tr0 = MatrixXd::Identity(4, 4);
+    // Tl0.block<3, 3>(0, 0) = R0;
+    // Tl0.block<3, 1>(0, 3) = t0;
+
+    // MatrixXd r0 = MatrixXd::Zero(N, 1);
+    // MatrixXd J = MatrixXd::Zero(N, 6);
+    // MatrixXd delta = MatrixXd::Zero(6, 1);
+    // MatrixXd delta_T = MatrixXd::Zero(4, 4);
+    // //MatrixXd delta_ep = MatrixXd::Zero(3, 1);
+    // MatrixXd H = MatrixXd::Zero(6, 6);
+    // MatrixXd b = MatrixXd::Zero(6, 1);
+
+    // for(int i = 0; i < 60; i++){
+    //     res(R0, t0, p, p_, r0);
+    //     Dr_Deps(Tl0, Tr0, p, p_, J);
+
+    //     b = J.transpose() * r0;
+    //     H = J.transpose() * J;
+    //     H = H + lambda * H.diagonal().asDiagonal().toDenseMatrix();
+
+    //     delta = - H.inverse() * b;
+    //     delta_T = Sophus::SE3<double>::exp(delta).matrix();
+
+    //     if(delta.norm() < epsilon){
+    //         break;
+    //     }
+
+    //     cout << i
+    //          << " " << H.norm()
+    //          << " " << r0.norm()
+    //          << " " << delta.norm()
+    //          << " " << lambda << endl;
+
+    //     MatrixXd t0_ = t0 + R0 * delta_T.block<3, 1>(0, 3);
+    //     MatrixXd R0_ = R0 * delta_T.block<3, 3>(0, 0);
+
+    //     res(R0_, t0_, p, p_, r0);
+
+    //     double curr_E = r0.norm();
+    //     if(curr_E < prev_E){
+    //         prev_E = curr_E;
+    //         R0 = R0_;
+    //         t0 = t0_;
+    //         Tl0.block<3, 3>(0, 0) = R0_;
+    //         Tl0.block<3, 1>(0, 3) = t0_;
+    //         lambda /= 2.0;
+    //     } else {
+    //         lambda *= 5.0;
+    //     }
+    // }
+
+    // cout << endl;
+    // cout << (R - R0).norm() << endl;
+    // cout << endl;
+    // cout << t.transpose() << endl;
+    // cout << t0.transpose() << endl;
+    // cout << t(0, 0) / t0(0, 0) << " "
+    //      << t(1, 0) / t0(1, 0) << " "
+    //      << t(2, 0) / t0(2, 0) << endl;
 }
