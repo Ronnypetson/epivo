@@ -266,20 +266,20 @@ void RepJacobian::compute(const MatrixXd &p,
 int main(){
     srand(time(0));
     const int N = 15; // Number of points of each reprojection
-    const int n_zeta = 10;
+    const int n_zeta = 2;
     vector<pair<int, int> > reps; // First zeta, last zeta. NOT first and last frames
     double epsilon = 1E-8;
     const int eps_dim = 6;
 
-    for(int i = 0; i < n_zeta; i++){
-        for(int j = i; j < n_zeta; j++){
-            reps.push_back(make_pair(i, j));
-        }
-    }
+    // for(int i = 0; i < n_zeta; i++){
+    //     for(int j = i; j < n_zeta; j++){
+    //         reps.push_back(make_pair(i, j));
+    //     }
+    // }
 
-    // reps.push_back(make_pair(0, 0));
-    // reps.push_back(make_pair(1, 1));
-    // reps.push_back(make_pair(0, 1));
+    reps.push_back(make_pair(0, 0));
+    reps.push_back(make_pair(1, 1));
+    reps.push_back(make_pair(0, 1));
     const int n_rep = reps.size();
 
     vector<MatrixXd> Ts;
@@ -287,166 +287,99 @@ int main(){
     vector<MatrixXd> T0s;
     noise_sequence(Ts, T0s);
 
-    // Compute reprojection data
-    vector<MatrixXd> T0r, Tr, T0r_;
-    vector<MatrixXd> Xr, pr, p_r;
-    MatrixXd R0(3, 3), t0(3, 1);
-    //vector<MatrixXd> r0r;
     for(int i = 0; i < n_rep; i++){
+        MatrixXd X, p, p_;
         int z0, z1;
         z0 = reps[i].first;
         z1 = reps[i].second;
+        
+        //cout << z0 << " " << z1 << endl << endl;
 
         MatrixXd T = MatrixXd::Identity(4, 4); // composed T
         MatrixXd T0 = MatrixXd::Identity(4, 4); // composed T0
+        MatrixXd R0(3, 3), t0(3, 1);
 
         for(int j = z0; j <= z1; j++){
             T = Ts[j] * T;
-            //T0 = T0s[j] * T0;
+            T0 = T0s[j] * T0;
         }
-
-        T0r.push_back(T0);
-        Tr.push_back(T);
-        T0r_.push_back(T0);
-
-        MatrixXd X, p, p_;
         gen_points(N, T, X, p, p_);
-        Xr.push_back(X);
-        pr.push_back(p);
-        p_r.push_back(p_);
-    }
 
-    const int zeta_dims = n_zeta * eps_dim;
-    const int rep_N = n_rep * N;
-    MatrixXd r0 = MatrixXd::Zero(rep_N, 1);
-    MatrixXd J = MatrixXd::Zero(rep_N, zeta_dims);
-    MatrixXd H = MatrixXd::Zero(zeta_dims, zeta_dims);
-    MatrixXd b = MatrixXd::Zero(zeta_dims, 1);
-    MatrixXd delta = MatrixXd::Zero(zeta_dims, 1);
+        int zeta_dims = (z1 - z0 + 1) * eps_dim;
+        MatrixXd r0 = MatrixXd::Zero(N, 1);
+        MatrixXd J = MatrixXd::Zero(N, zeta_dims);
+        MatrixXd H = MatrixXd::Zero(zeta_dims, zeta_dims);
+        MatrixXd b = MatrixXd::Zero(zeta_dims, 1);
+        MatrixXd delta = MatrixXd::Zero(zeta_dims, 1);
+        //MatrixXd delta_T = MatrixXd::Zero(4, 4);
 
-    // Levenberg-Marquadt
-    double lambda = 0.01;
-    double prev_E = 1E10;
-    for(int i = 0; i < 60; i++){
-        r0 = MatrixXd::Zero(rep_N, 1);
-        J = MatrixXd::Zero(rep_N, zeta_dims);
+        // Levenberg-Marquadt
+        double lambda = 0.01;
+        double prev_E = 1E10;
+        for(int j = 0; j < 60; j++){
+            R0 = T0.block<3, 3>(0, 0);
+            t0 = T0.block<3, 1>(0, 3);
+            res(R0, t0, p, p_, r0);
 
-        // Update T0r
-        for(int j = 0; j < n_rep; j++){
-            int z0, z1;
-            z0 = reps[j].first;
-            z1 = reps[j].second;
-
-            MatrixXd T0 = MatrixXd::Identity(4, 4); // composed T0
-            for(int k = z0; k <= z1; k++){
-                T0 = T0s[k] * T0;
-            }
-            T0r[j] = T0;
-        }
-
-        // Concatenate r0s
-        for(int j = 0; j < n_rep; j++){
-            MatrixXd r0_rep = MatrixXd::Zero(N, 1);
-            R0 = T0r[j].block<3, 3>(0, 0);
-            t0 = T0r[j].block<3, 1>(0, 3);
-            res(R0, t0, pr[j], p_r[j], r0_rep);
-            r0.block<N, 1>(j * N, 0) = r0_rep;
-        }
-
-        //cout << r0 << endl << endl;
-
-        // Concatenate J through zetas and reprojections
-        for(int j = 0; j < n_rep; j++){
-            const int z0 = reps[j].first;
-            const int z1 = reps[j].second;
-            MatrixXd Jrep = MatrixXd::Zero(N, (z1 - z0 + 1) * eps_dim);
             for(int k = z0; k <= z1; k++){
                 // Compute J_res_zeta
                 MatrixXd Jz = MatrixXd::Zero(N, eps_dim);
                 RepJacobian Jr(k, z0, z1);
-                Jr.compute(pr[j], p_r[j], T0s, Jz);
-                Jrep.block<N, eps_dim>(0, (k - z0) * eps_dim) = Jz;
+                Jr.compute(p, p_, T0s, Jz);
+                J.block<N, eps_dim>(0, (k - z0) * eps_dim) = Jz;
             }
-            //J.block<N, (z1 - z0 + 1) * eps_dim>(j * N, z0 * eps_dim) = Jrep;
+
+            b = J.transpose() * r0;
+            H = J.transpose() * J;
+            H = H + lambda * H.diagonal().asDiagonal().toDenseMatrix();
+
+            delta = -H.inverse() * b;
+
+            vector<MatrixXd> T0s_;
+            MatrixXd T0_ = MatrixXd::Identity(4, 4); // composite new T0
             for(int k = z0; k <= z1; k++){
-                J.block<N, eps_dim>(j * N, k * eps_dim)
-                        = Jrep.block<N, eps_dim>(0, (k - z0) * eps_dim);
+                MatrixXd delta_k = delta.block<eps_dim, 1>((k - z0) * eps_dim, 0);
+                MatrixXd delta_T = Sophus::SE3<double>::exp(delta_k).matrix();
+                MatrixXd new_T = T0s[k] * delta_T;
+                T0s_.push_back(new_T);
+                T0_ = new_T * T0_;
+            }
+
+            if(delta.norm() < epsilon){
+                break;
+            }
+
+            MatrixXd t0_ = T0_.block<3, 1>(0, 3);
+            MatrixXd R0_ = T0_.block<3, 3>(0, 0);
+
+            res(R0_, t0_, p, p_, r0);
+
+            double curr_E = r0.norm();
+            if(curr_E < prev_E){
+                prev_E = curr_E;
+
+                for(int k = z0; k <= z1; k++){
+                    T0s[k] = T0s_[k - z0];
+                }
+
+                T0 = T0_;
+
+                lambda /= 2.0;
+            } else {
+                lambda *= 5.0;
             }
         }
 
-        //cout << J << endl << endl;
+        cout << z0 << " " << z1 << endl;
+        cout << " " << H.norm()
+             << " " << r0.norm()
+             << " " << delta.norm()
+             << " " << lambda << endl;
 
-        b = J.transpose() * r0;
-        H = J.transpose() * J;
-        H = H + lambda * H.diagonal().asDiagonal().toDenseMatrix();
-
-        delta = -H.inverse() * b;
-
-        vector<MatrixXd> T0s_;
-        //MatrixXd T0_ = MatrixXd::Identity(4, 4); // composite new T0
-        for(int j = 0; j < T0s.size(); j++){
-            MatrixXd delta_k = delta.block<eps_dim, 1>(j * eps_dim, 0);
-            MatrixXd delta_T = Sophus::SE3<double>::exp(delta_k).matrix();
-            MatrixXd new_T = T0s[j] * delta_T;
-            T0s_.push_back(new_T);
-            //T0_ = new_T * T0_;
-        }
-
-        if(delta.norm() < epsilon){
-            break;
-        }
-
-        //MatrixXd t0_ = T0_.block<3, 1>(0, 3);
-        //MatrixXd R0_ = T0_.block<3, 3>(0, 0);
-
-        //res(R0_, t0_, p, p_, r0);
-
-        // Compute candidate T0r_
-        for(int j = 0; j < n_rep; j++){
-            int z0, z1;
-            z0 = reps[j].first;
-            z1 = reps[j].second;
-            MatrixXd T0 = MatrixXd::Identity(4, 4); // composed T0
-            for(int k = z0; k <= z1; k++){
-                T0 = T0s_[k] * T0;
-            }
-            T0r_[j] = T0;
-        }
-
-        // Concatenate candidate r0s
-        for(int j = 0; j < n_rep; j++){
-            MatrixXd r0_rep = MatrixXd::Zero(N, 1);
-            
-            R0 = T0r_[j].block<3, 3>(0, 0);
-            t0 = T0r_[j].block<3, 1>(0, 3);
-
-            res(R0, t0, pr[j], p_r[j], r0_rep);
-            r0.block<N, 1>(j * N, 0) = r0_rep;
-        }
-
-        //cout << "candidate r0" << endl << endl;
-
-        double curr_E = r0.norm();
-        if(curr_E < prev_E){
-            prev_E = curr_E;
-
-            for(int j = 0; j < T0s.size(); j++){
-                T0s[j] = T0s_[j];
-            }
-
-            lambda /= 2.0;
-        } else {
-            lambda *= 5.0;
-        }
+        cout << endl;
     }
 
-    cout << " " << H.norm()
-         << " " << r0.norm()
-         << " " << delta.norm()
-         << " " << lambda << endl;
-    cout << endl;
-
-    MatrixXd R, t; //, R0, t0;
+    MatrixXd R, t, R0, t0;
     for(int i = 0; i < n_zeta; i++){
         R = Ts[i].block<3, 3>(0, 0);
         t = Ts[i].block<3, 1>(0, 3);
@@ -463,4 +396,78 @@ int main(){
              << t(1, 0) / t0(1, 0) << " "
              << t(2, 0) / t0(2, 0) << endl;
     }
+
+    // MatrixXd R0(3, 3), R(3, 3); //, pR(3, 3);
+    // VectorXd t0(3), t(3); //, pt(3);
+    // MatrixXd T0(4, 4), T(4, 4), Tn(4, 4);    
+
+    // gen_T(T);
+    // R = T.block<3, 3>(0, 0);
+    // t = T.block<3, 1>(0, 3);
+    // T_noise(Tn);
+    // T0 = T * Tn;
+    // R0 = T0.block<3, 3>(0, 0);
+    // t0 = T0.block<3, 1>(0, 3);
+    // t0 = t0 / t0.norm();
+    
+    // MatrixXd Tl0 = MatrixXd::Identity(4, 4);
+    // MatrixXd Tr0 = MatrixXd::Identity(4, 4);
+    // Tl0.block<3, 3>(0, 0) = R0;
+    // Tl0.block<3, 1>(0, 3) = t0;
+
+    // MatrixXd r0 = MatrixXd::Zero(N, 1);
+    // MatrixXd J = MatrixXd::Zero(N, 6);
+    // MatrixXd delta = MatrixXd::Zero(6, 1);
+    // MatrixXd delta_T = MatrixXd::Zero(4, 4);
+    // //MatrixXd delta_ep = MatrixXd::Zero(3, 1);
+    // MatrixXd H = MatrixXd::Zero(6, 6);
+    // MatrixXd b = MatrixXd::Zero(6, 1);
+
+    // for(int i = 0; i < 60; i++){
+    //     res(R0, t0, p, p_, r0);
+    //     Dr_Deps(Tl0, Tr0, p, p_, J);
+
+    //     b = J.transpose() * r0;
+    //     H = J.transpose() * J;
+    //     H = H + lambda * H.diagonal().asDiagonal().toDenseMatrix();
+
+    //     delta = - H.inverse() * b;
+    //     delta_T = Sophus::SE3<double>::exp(delta).matrix();
+
+    //     if(delta.norm() < epsilon){
+    //         break;
+    //     }
+
+    //     cout << i
+    //          << " " << H.norm()
+    //          << " " << r0.norm()
+    //          << " " << delta.norm()
+    //          << " " << lambda << endl;
+
+    //     MatrixXd t0_ = t0 + R0 * delta_T.block<3, 1>(0, 3);
+    //     MatrixXd R0_ = R0 * delta_T.block<3, 3>(0, 0);
+
+    //     res(R0_, t0_, p, p_, r0);
+
+    //     double curr_E = r0.norm();
+    //     if(curr_E < prev_E){
+    //         prev_E = curr_E;
+    //         R0 = R0_;
+    //         t0 = t0_;
+    //         Tl0.block<3, 3>(0, 0) = R0_;
+    //         Tl0.block<3, 1>(0, 3) = t0_;
+    //         lambda /= 2.0;
+    //     } else {
+    //         lambda *= 5.0;
+    //     }
+    // }
+
+    // cout << endl;
+    // cout << (R - R0).norm() << endl;
+    // cout << endl;
+    // cout << t.transpose() << endl;
+    // cout << t0.transpose() << endl;
+    // cout << t(0, 0) / t0(0, 0) << " "
+    //      << t(1, 0) / t0(1, 0) << " "
+    //      << t(2, 0) / t0(2, 0) << endl;
 }
