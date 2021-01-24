@@ -266,7 +266,7 @@ void RepJacobian::compute(const MatrixXd &p,
 int main(){
     srand(time(0));
     const int N = 15; // Number of points of each reprojection
-    const int n_zeta = 10;
+    const int n_zeta = 8;
     vector<pair<int, int> > reps; // First zeta, last zeta. NOT first and last frames
     double epsilon = 1E-8;
     const int eps_dim = 6;
@@ -330,6 +330,9 @@ int main(){
     for(int i = 0; i < 60; i++){
         r0 = MatrixXd::Zero(rep_N, 1);
         J = MatrixXd::Zero(rep_N, zeta_dims);
+
+        cout << r0 << endl << endl;
+        cout << J << endl << endl;
 
         // Update T0r
         for(int j = 0; j < n_rep; j++){
@@ -438,13 +441,14 @@ int main(){
         } else {
             lambda *= 5.0;
         }
-    }
 
-    cout << " " << H.norm()
+        cout << i
+         << " " << H.norm()
          << " " << r0.norm()
          << " " << delta.norm()
          << " " << lambda << endl;
-    cout << endl;
+        cout << endl;
+    }
 
     MatrixXd R, t; //, R0, t0;
     for(int i = 0; i < n_zeta; i++){
