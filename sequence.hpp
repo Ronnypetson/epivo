@@ -34,15 +34,15 @@ int gen_sequence(const int n, vector<MatrixXd> &Ts){
 }
 
 int T_noise(MatrixXd &T){
-    double noise = 0E-2 * (0.5 - (double) rand() / (RAND_MAX));
+    double noise = 1E-2 * (0.5 - (double) rand() / (RAND_MAX));
     Sophus::SO3d Rx_noise = Sophus::SO3d::rotX(noise);
-    noise = 0E-2 * (0.5 - (double) rand() / (RAND_MAX));
+    noise = 1E-2 * (0.5 - (double) rand() / (RAND_MAX));
     Sophus::SO3d Ry_noise = Sophus::SO3d::rotY(noise);
-    noise = 0E-2 * (0.5 - (double) rand() / (RAND_MAX));
+    noise = 1E-2 * (0.5 - (double) rand() / (RAND_MAX));
     Sophus::SO3d Rz_noise = Sophus::SO3d::rotZ(noise);
     
     T.block<3, 3>(0, 0) = Rx_noise.matrix() * Ry_noise.matrix() * Rz_noise.matrix();
-    T.block<3, 1>(0, 3) = 0E-1 * VectorXd::Random(3, 1);
+    T.block<3, 1>(0, 3) = 1E-1 * VectorXd::Random(3, 1);
     T.block<1, 4>(3, 0) << 0, 0, 0, 1;
 }
 
@@ -52,7 +52,7 @@ int noise_sequence(const vector<MatrixXd> &Ts, vector<MatrixXd> &T0s){
         T_noise(Tn);
         Tn = Ts[i] * Tn;
         MatrixXd t = Tn.block<3, 1>(0, 3);
-        //t = t / t.norm(); // Comment to test validity of the optimization
+        t = t / t.norm(); // Comment to test validity of the optimization
         Tn.block<3, 1>(0, 3) = t;
         T0s.push_back(Tn);
     }
@@ -72,6 +72,9 @@ int gen_points(const int N,
     MatrixXd t = T.block<3, 1>(0, 3);
     double mag_t = t.norm();
 
+    //default_random_engine generator;
+    //normal_distribution<double> distribution(0.0, 1E-4);
+
     for(int i = 0; i < N; i++){
         MatrixXd x_ = MatrixXd::Zero(1, 3);
         do {
@@ -85,5 +88,14 @@ int gen_points(const int N,
 
         p.row(i) = X.row(i) / X(i, 2);
         p_.row(i) = x_ / x_(0, 2);
+
+        // // Add Gaussian noise to measurements
+        // for(int j = 0; j < 2; j++){
+        //     p(i, j) += distribution(generator);
+        // }
+
+        // for(int j = 0; j < 2; j++){
+        //     p_(i, j) += distribution(generator);
+        // }
     }
 }
