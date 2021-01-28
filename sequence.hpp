@@ -20,6 +20,9 @@ int gen_T(MatrixXd &T){
     Sophus::SO3d Rz = Sophus::SO3d::rotZ(r * pi / 12);
     R = Rx.matrix() * Ry.matrix() * Rz.matrix();
     t = 10.0 * MatrixXd::Random(3, 1);
+    if(t(2, 0) < 0.0){
+        t(2, 0) *= -1.0;
+    }
     T.block<3, 3>(0, 0) = R;
     T.block<3, 1>(0, 3) = t;
     T.block<1, 4>(3, 0) << 0, 0, 0, 1;

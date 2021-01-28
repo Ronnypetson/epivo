@@ -4,6 +4,7 @@
 #include <vector>
 #include <math.h>
 #include <map>
+#include <fstream>
 #include "sophus/geometry.hpp"
 #include "test_jac_Rt_gen.hpp"
 #include "sequence.hpp"
@@ -279,15 +280,20 @@ void RepJacobian::compute(const MatrixXd &p,
 int main(){
     srand(time(0));
     const int N = 15; // Number of points of each reprojection
-    const int n_zeta = 64;
+    const int n_zeta = 30;
     vector<pair<int, int> > reps; // First zeta, last zeta. NOT first and last frames
     double epsilon = 1E-8;
     const int eps_dim = 6;
 
+    // for(int i = 0; i < n_zeta; i++){
+    //     for(int j = i; j < n_zeta; j++){
+    //         reps.push_back(make_pair(i, j));
+    //     }
+    // }
+
     for(int i = 0; i < n_zeta; i++){
-        for(int j = i; j < n_zeta; j++){
-            reps.push_back(make_pair(i, j));
-        }
+        reps.push_back(make_pair(i, i));
+        reps.push_back(make_pair(0, i));
     }
 
     const int n_rep = reps.size();
@@ -461,7 +467,17 @@ int main(){
          << " " << lambda << endl;
     cout << endl;
 
-    MatrixXd R, t; //, R0, t0;
+    ofstream est, gt;
+    est.open("est.pose");
+    gt.open("gt.pose");
+
+    // myfile << "Writing this to a file.\n";
+
+    MatrixXd R, t;
+    MatrixXd gT0 = MatrixXd::Identity(4, 4);
+    MatrixXd gT = MatrixXd::Identity(4, 4);
+    est << gT0 << "\n\n";
+    gt << gT << "\n\n";
     for(int i = 0; i < n_zeta; i++){
         R = Ts[i].block<3, 3>(0, 0);
         t = Ts[i].block<3, 1>(0, 3);
@@ -477,5 +493,16 @@ int main(){
         cout << t(0, 0) / t0(0, 0) << " "
              << t(1, 0) / t0(1, 0) << " "
              << t(2, 0) / t0(2, 0) << endl;
+            
+        //gT0 = gT0 * T0s[i].inverse();
+        //gT = gT * Ts[i].inverse();
+        gT0 = T0s[i] * gT0;
+        gT = Ts[i] * gT;
+
+        est << gT0 << "\n\n";
+        gt << gT << "\n\n";
     }
+
+    est.close();
+    gt.close();
 }
