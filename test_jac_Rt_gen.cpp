@@ -280,7 +280,7 @@ void RepJacobian::compute(const MatrixXd &p,
 int main(){
     srand(time(0));
     const int N = 15; // Number of points of each reprojection
-    const int n_zeta = 30;
+    const int n_zeta = 128;
     vector<pair<int, int> > reps; // First zeta, last zeta. NOT first and last frames
     double epsilon = 1E-8;
     const int eps_dim = 6;
@@ -474,6 +474,7 @@ int main(){
     // myfile << "Writing this to a file.\n";
 
     MatrixXd R, t;
+    double scale;
     MatrixXd gT0 = MatrixXd::Identity(4, 4);
     MatrixXd gT = MatrixXd::Identity(4, 4);
     est << gT0 << "\n\n";
@@ -493,9 +494,13 @@ int main(){
         cout << t(0, 0) / t0(0, 0) << " "
              << t(1, 0) / t0(1, 0) << " "
              << t(2, 0) / t0(2, 0) << endl;
-            
-        //gT0 = gT0 * T0s[i].inverse();
-        //gT = gT * Ts[i].inverse();
+        
+        scale = ( t(0, 0) / t0(0, 0)
+                + t(1, 0) / t0(1, 0)
+                + t(2, 0) / t0(2, 0)) / 3.0;
+        
+        T0s[i].block<3, 1>(0, 3) *= scale;
+
         gT0 = T0s[i] * gT0;
         gT = Ts[i] * gT;
 
