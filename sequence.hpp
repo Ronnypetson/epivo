@@ -37,11 +37,11 @@ int gen_sequence(const int n, vector<MatrixXd> &Ts){
 }
 
 int T_noise(MatrixXd &T){
-    double noise = 1E-1 * (0.5 - (double) rand() / (RAND_MAX));
+    double noise = 1E-2 * (0.5 - (double) rand() / (RAND_MAX));
     Sophus::SO3d Rx_noise = Sophus::SO3d::rotX(noise);
-    noise = 1E-1 * (0.5 - (double) rand() / (RAND_MAX));
+    noise = 1E-2 * (0.5 - (double) rand() / (RAND_MAX));
     Sophus::SO3d Ry_noise = Sophus::SO3d::rotY(noise);
-    noise = 1E-1 * (0.5 - (double) rand() / (RAND_MAX));
+    noise = 1E-2 * (0.5 - (double) rand() / (RAND_MAX));
     Sophus::SO3d Rz_noise = Sophus::SO3d::rotZ(noise);
     
     T.block<3, 3>(0, 0) = Rx_noise.matrix() * Ry_noise.matrix() * Rz_noise.matrix();
