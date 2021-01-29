@@ -286,7 +286,7 @@ void RepJacobian::compute(const MatrixXd &p,
 int main(){
     srand(time(0));
     const int N = 15; // Number of points of each reprojection
-    const int n_zeta = 10;
+    const int n_zeta = 2;
     vector<pair<int, int> > reps; // First zeta, last zeta. NOT first and last frames
     double epsilon = 1E-8;
     const int eps_dim = 6;
@@ -297,13 +297,14 @@ int main(){
     //     }
     // }
 
-    for(int i = 0; i < n_zeta; i++){
-        reps.push_back(make_pair(i, i));
-        reps.push_back(make_pair(i, 0));
-        //reps.push_back(make_pair(i, i + 1));
-        //reps.push_back(make_pair(i + 1, i));
-    }
-    //reps.push_back(make_pair(n_zeta - 1, n_zeta - 1));
+    // for(int i = 0; i < n_zeta; i++){
+    //     reps.push_back(make_pair(i, i));
+    //     //reps.push_back(make_pair(0, i));
+    //     //reps.push_back(make_pair(i, i + 1));
+    //     //reps.push_back(make_pair(i + 1, i));
+    // }
+    //reps.push_back(make_pair(0, 1));
+    reps.push_back(make_pair(1, 0));
 
     const int n_rep = reps.size();
 
@@ -512,6 +513,19 @@ int main(){
 
     MatrixXd R, t;
     double scale;
+    MatrixXd T = MatrixXd::Identity(4, 4);
+    MatrixXd T0 = MatrixXd::Identity(4, 4);
+    for(int i = 0; i < Ts.size(); i++){
+        T = Ts[i] * T;
+        T0 = T0s[i] * T0;
+    }
+
+    t = T.block<3, 1>(0, 3);
+    t0 = T0.block<3, 1>(0, 3);
+    scale = ( t(0, 0) / t0(0, 0)
+            + t(1, 0) / t0(1, 0)
+            + t(2, 0) / t0(2, 0)) / 3.0;
+    
     MatrixXd gT0 = MatrixXd::Identity(4, 4);
     MatrixXd gT = MatrixXd::Identity(4, 4);
     est << gT0 << "\n\n";
@@ -531,10 +545,6 @@ int main(){
         cout << t(0, 0) / t0(0, 0) << " "
              << t(1, 0) / t0(1, 0) << " "
              << t(2, 0) / t0(2, 0) << endl;
-        
-        scale = ( t(0, 0) / t0(0, 0)
-                + t(1, 0) / t0(1, 0)
-                + t(2, 0) / t0(2, 0)) / 3.0;
         
         T0s[i].block<3, 1>(0, 3) *= scale;
 

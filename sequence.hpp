@@ -13,13 +13,13 @@ int gen_T(MatrixXd &T){
 
     const double pi = Sophus::Constants<double>::pi();
     double r = 2.0 * (0.5 - (double) rand() / (RAND_MAX));
-    Sophus::SO3d Rx = Sophus::SO3d::rotX(r * pi / 12);
+    Sophus::SO3d Rx = Sophus::SO3d::rotX(r * pi / 6);
     r = 2.0 * (0.5 - (double) rand() / (RAND_MAX));
-    Sophus::SO3d Ry = Sophus::SO3d::rotY(r * pi / 12);
+    Sophus::SO3d Ry = Sophus::SO3d::rotY(r * pi / 6);
     r = 2.0 * (0.5 - (double) rand() / (RAND_MAX));
-    Sophus::SO3d Rz = Sophus::SO3d::rotZ(r * pi / 12);
+    Sophus::SO3d Rz = Sophus::SO3d::rotZ(r * pi / 6);
     R = Rx.matrix() * Ry.matrix() * Rz.matrix();
-    t = 1.0 * MatrixXd::Random(3, 1);
+    t = 10.0 * MatrixXd::Random(3, 1);
     if(t(2, 0) < 0.0){
         t(2, 0) *= -1.0;
     }
