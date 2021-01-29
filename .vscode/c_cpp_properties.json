@@ -5,7 +5,9 @@
             "includePath": [
                 "${workspaceFolder}/**",
                 "/usr/include/eigen3",
-                "/usr/local/include/sophus"
+                "/usr/local/include/sophus",
+                "/home/ronnypetson/repos/Pangolin/include/",
+                "/home/ronnypetson/repos/Pangolin/build/src/include/"
             ],
             "defines": [],
             "compilerPath": "/usr/bin/clang",

@@ -280,7 +280,7 @@ void RepJacobian::compute(const MatrixXd &p,
 int main(){
     srand(time(0));
     const int N = 15; // Number of points of each reprojection
-    const int n_zeta = 128;
+    const int n_zeta = 10;
     vector<pair<int, int> > reps; // First zeta, last zeta. NOT first and last frames
     double epsilon = 1E-8;
     const int eps_dim = 6;

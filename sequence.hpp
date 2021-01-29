@@ -75,8 +75,8 @@ int gen_points(const int N,
     MatrixXd t = T.block<3, 1>(0, 3);
     double mag_t = t.norm();
 
-    default_random_engine generator;
-    normal_distribution<double> distribution(0.0, 1E-3);
+    //default_random_engine generator;
+    //normal_distribution<double> distribution(0.0, 1E-3);
 
     for(int i = 0; i < N; i++){
         MatrixXd x_ = MatrixXd::Zero(1, 3);
@@ -92,13 +92,13 @@ int gen_points(const int N,
         p.row(i) = X.row(i) / X(i, 2);
         p_.row(i) = x_ / x_(0, 2);
 
-        // Add Gaussian noise to measurements
-        for(int j = 0; j < 2; j++){
-            p(i, j) += distribution(generator);
-        }
+        // // Add Gaussian noise to measurements
+        // for(int j = 0; j < 2; j++){
+        //     p(i, j) += distribution(generator);
+        // }
 
-        for(int j = 0; j < 2; j++){
-            p_(i, j) += distribution(generator);
-        }
+        // for(int j = 0; j < 2; j++){
+        //     p_(i, j) += distribution(generator);
+        // }
     }
 }

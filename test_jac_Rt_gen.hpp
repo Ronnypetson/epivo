@@ -22,9 +22,11 @@ class RepJacobian {
     int target_id;
   public:
     RepJacobian (int z, int s, int t){
-        assert(s <= t);
-        assert(s <= z);
-        assert(z <= t);
+        //assert(s <= t);
+        //assert(s <= z);
+        //assert(z <= t);
+        assert(s <= z && z <= t || t <= z && z <= s);
+
         zeta_id = z;
         source_id = s;
         target_id = t;
