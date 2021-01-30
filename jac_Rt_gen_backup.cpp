@@ -283,79 +283,65 @@ void RepJacobian::compute(const MatrixXd &p,
 }
 
 
-int Levenberg_Marquardt(const int n_zeta,
-                        const double epsilon,
-                        const vector<pair<int, int> > &reps,
-                        const double lambda0,
-                        vector<MatrixXd> &T0s,
-                        vector<MatrixXd> &pr,
-                        vector<MatrixXd> &p_r
-                        ){
-    // srand(time(0));
-    const int N = pr[0].rows(); // Number of points of each reprojection
-    // const int n_zeta = 32;
-    // vector<pair<int, int> > reps; // First zeta, last zeta. NOT first and last frames
-    // double epsilon = 1E-8;
+int main(){
+    srand(time(0));
+    const int N = 15; // Number of points of each reprojection
+    const int n_zeta = 10;
+    vector<pair<int, int> > reps; // First zeta, last zeta. NOT first and last frames
+    double epsilon = 1E-8;
     const int eps_dim = 6;
 
-    // for(int i = 0; i < n_zeta; i++){
-    //     for(int j = i; j < n_zeta; j++){
-    //         reps.push_back(make_pair(i, j));
-    //     }
-    // }
+    //reps.push_back(make_pair(n_zeta - 1, 0));
+    reps.push_back(make_pair(0, n_zeta - 1));
 
     // for(int i = 0; i < n_zeta; i++){
-    //     //reps.push_back(make_pair(i, i));
-    //     reps.push_back(make_pair(i, min(i + 1, n_zeta - 1)));
-    //     reps.push_back(make_pair(min(i + 1, n_zeta - 1), i));
-    //     reps.push_back(make_pair(i, min(i + 2, n_zeta - 1)));
-    //     reps.push_back(make_pair(min(i + 2, n_zeta - 1), i));
+    //     reps.push_back(make_pair(i, i));
+    //     //reps.push_back(make_pair(0, i));
+    //     //reps.push_back(make_pair(i, i + 1));
+    //     //reps.push_back(make_pair(i + 1, i));
     // }
-    //reps.push_back(make_pair(1, 1));
     //reps.push_back(make_pair(0, 1));
+    //reps.push_back(make_pair(1, 0));
 
     const int n_rep = reps.size();
 
-    //vector<MatrixXd> Ts, T0s;
-    // gen_sequence(n_zeta, Ts);
-    // vector<MatrixXd> T0s;
-    // noise_sequence(Ts, T0s);
+    vector<MatrixXd> Ts;
+    gen_sequence(n_zeta, Ts);
+    vector<MatrixXd> T0s;
+    noise_sequence(Ts, T0s);
 
     // Compute reprojection data
-    vector<MatrixXd> T0r, T0r_; // Tr,
-    //vector<MatrixXd> Xr, pr, p_r;
+    vector<MatrixXd> T0r, Tr, T0r_;
+    vector<MatrixXd> Xr, pr, p_r;
     MatrixXd R0(3, 3), t0(3, 1);
-    // for(int i = 0; i < n_rep; i++){
-        // int z0, z1;
-        // z0 = reps[i].first;
-        // z1 = reps[i].second;
-        // MatrixXd T = MatrixXd::Identity(4, 4); // composed T
-        // MatrixXd T0 = MatrixXd::Identity(4, 4); // composed T0
-        // if(z0 <= z1){
-        //     for(int j = z0; j <= z1; j++){
-        //         T = Ts[j] * T;
-        //     }
-        // } else {
-        //     for(int j = z0; j >= z1; j--){
-        //         T = Ts[j].inverse() * T;
-        //     }
-        // }
-        // T0r.push_back(T0);
-        // //Tr.push_back(T); // obsolete
-        // T0r_.push_back(T0);
-        // MatrixXd X, p, p_;
-        // gen_points(N, T, X, p, p_);
-        // Xr.push_back(X);
-        // pr.push_back(p);
-        // p_r.push_back(p_);
-    // }
-
     for(int i = 0; i < n_rep; i++){
-        T0r.push_back(MatrixXd::Identity(4, 4));
-        T0r_.push_back(MatrixXd::Identity(4, 4));
-    }
+        int z0, z1;
+        z0 = reps[i].first;
+        z1 = reps[i].second;
 
-    //gen_scene_sequence(N, n_zeta, reps, Ts, T0s, Xr, pr, p_r);
+        MatrixXd T = MatrixXd::Identity(4, 4); // composed T
+        MatrixXd T0 = MatrixXd::Identity(4, 4); // composed T0
+
+        if(z0 <= z1){
+            for(int j = z0; j <= z1; j++){
+                T = Ts[j] * T;
+            }
+        } else {
+            for(int j = z0; j >= z1; j--){
+                T = Ts[j].inverse() * T;
+            }
+        }
+
+        T0r.push_back(T0);
+        Tr.push_back(T);
+        T0r_.push_back(T0);
+
+        MatrixXd X, p, p_;
+        gen_points(N, T, X, p, p_);
+        Xr.push_back(X);
+        pr.push_back(p);
+        p_r.push_back(p_);
+    }
 
     const int zeta_dims = n_zeta * eps_dim;
     const int rep_N = n_rep * N;
@@ -365,9 +351,8 @@ int Levenberg_Marquardt(const int n_zeta,
     MatrixXd b = MatrixXd::Zero(zeta_dims, 1);
     MatrixXd delta = MatrixXd::Zero(zeta_dims, 1);
 
-    // Levenberg-Marquardt
-    //double lambda = 0.01;
-    double lambda = lambda0;
+    // Levenberg-Marquadt
+    double lambda = 0.01;
     double prev_E = 1E10;
     for(int i = 0; i < 60; i++){
         r0 = MatrixXd::Zero(rep_N, 1);
@@ -407,8 +392,7 @@ int Levenberg_Marquardt(const int n_zeta,
             t0 = T0r[j].block<3, 1>(0, 3);
 
             res(R0, t0, pr[j], p_r[j], r0_rep);
-            //r0.block<N, 1>(j * N, 0) = r0_rep;
-            r0.block(j * N, 0, N, 1) = r0_rep;
+            r0.block<N, 1>(j * N, 0) = r0_rep;
         }
 
         // Concatenate J through zetas and reprojections
@@ -422,14 +406,12 @@ int Levenberg_Marquardt(const int n_zeta,
                     MatrixXd Jz = MatrixXd::Zero(N, eps_dim);
                     RepJacobian Jr(k, z0, z1);
                     Jr.compute(pr[j], p_r[j], T0s, Jz);
-                    //Jrep.block<N, eps_dim>(0, (k - z0) * eps_dim) = Jz;
-                    Jrep.block(0, (k - z0) * eps_dim, N, eps_dim) = Jz;
+                    Jrep.block<N, eps_dim>(0, (k - z0) * eps_dim) = Jz;
                 }
-                //for(int k = z0; k <= z1; k++){
-                //    J.block<N, eps_dim>(j * N, k * eps_dim)
-                //            = Jrep.block<N, eps_dim>(0, (k - z0) * eps_dim);
-                //}
-                J.block(j * N, z0 * eps_dim, N, (z1 - z0 + 1) * eps_dim) = Jrep;
+                for(int k = z0; k <= z1; k++){
+                    J.block<N, eps_dim>(j * N, k * eps_dim)
+                            = Jrep.block<N, eps_dim>(0, (k - z0) * eps_dim);
+                }
             } else {
                 MatrixXd Jrep = MatrixXd::Zero(N, (z0 - z1 + 1) * eps_dim);
                 for(int k = z0; k >= z1; k--){
@@ -437,16 +419,17 @@ int Levenberg_Marquardt(const int n_zeta,
                     MatrixXd Jz = MatrixXd::Zero(N, eps_dim);
                     RepJacobian Jr(k, z0, z1);
                     Jr.compute(pr[j], p_r[j], T0s, Jz);
-                    //Jrep.block<N, eps_dim>(0, (k - z1) * eps_dim) = Jz;
-                    Jrep.block(0, (k - z1) * eps_dim, N, eps_dim) = Jz;
+                    Jrep.block<N, eps_dim>(0, (k - z1) * eps_dim) = Jz;
                 }
-                //for(int k = z0; k >= z1; k--){
-                //    J.block<N, eps_dim>(j * N, k * eps_dim)
-                //            = Jrep.block<N, eps_dim>(0, (k - z1) * eps_dim);
-                //}
-                J.block(j * N, z1 * eps_dim, N, (z0 - z1 + 1) * eps_dim) = Jrep;
+                for(int k = z0; k >= z1; k--){
+                    J.block<N, eps_dim>(j * N, k * eps_dim)
+                            = Jrep.block<N, eps_dim>(0, (k - z1) * eps_dim);
+                }
             }
         }
+
+        //cout << r0 << endl << endl;
+        //cout << J << endl << endl;
 
         b = J.transpose() * r0;
         H = J.transpose() * J;
@@ -494,8 +477,7 @@ int Levenberg_Marquardt(const int n_zeta,
             t0 = T0r_[j].block<3, 1>(0, 3);
 
             res(R0, t0, pr[j], p_r[j], r0_rep);
-            //r0.block<N, 1>(j * N, 0) = r0_rep;
-            r0.block(j * N, 0, N, 1) = r0_rep;
+            r0.block<N, 1>(j * N, 0) = r0_rep;
         }
 
         //cout << "candidate r0" << endl << endl;
@@ -519,50 +501,14 @@ int Levenberg_Marquardt(const int n_zeta,
          << " " << delta.norm()
          << " " << lambda << endl;
     cout << endl;
-}
 
-
-int main(){
-    srand(time(0));
-    const int N = 15; // Number of points of each reprojection
-    const int n_zeta = 10;
-    const double epsilon = 1E-8;
-    //const int eps_dim = 6;
-    vector<pair<int, int> > reps; // First zeta, last zeta. NOT first and last frames
-
-    // for(int i = 0; i < n_zeta; i++){
-    //     reps.push_back(make_pair(i, i));
-    //     //reps.push_back(make_pair(i, min(i + 1, n_zeta - 1)));
-    //     reps.push_back(make_pair(min(i + 1, n_zeta - 1), i));
-    //     //reps.push_back(make_pair(i, min(i + 2, n_zeta - 1)));
-    //     //reps.push_back(make_pair(min(i + 2, n_zeta - 1), i));
-    //     //if(i < n_zeta - 1){
-    //     //    reps.push_back(make_pair(i + 1, i));
-    //     //}
-    // }
-    //reps.push_back(make_pair(n_zeta - 1, 0));
-    reps.push_back(make_pair(0, n_zeta - 1));
-
-    vector<MatrixXd> Ts, T0s;
-    vector<MatrixXd> Xr, pr, p_r;
-    gen_scene_sequence(N, n_zeta, reps, Ts, T0s, Xr, pr, p_r);
-
-    double lambda0 = 0.01;
-    Levenberg_Marquardt(n_zeta,
-                        epsilon,
-                        reps,
-                        lambda0,
-                        T0s,
-                        pr,
-                        p_r);
-    
-    // Save output
     ofstream est, gt;
     est.open("est.pose");
     gt.open("gt.pose");
 
-    MatrixXd R(3, 3), t(3, 1);
-    MatrixXd R0(3, 3), t0(3, 1);
+    // myfile << "Writing this to a file.\n";
+
+    MatrixXd R, t;
     double scale;
     MatrixXd T = MatrixXd::Identity(4, 4);
     MatrixXd T0 = MatrixXd::Identity(4, 4);

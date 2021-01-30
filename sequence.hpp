@@ -19,7 +19,7 @@ int gen_T(MatrixXd &T){
     r = 2.0 * (0.5 - (double) rand() / (RAND_MAX));
     Sophus::SO3d Rz = Sophus::SO3d::rotZ(r * pi / 6);
     R = Rx.matrix() * Ry.matrix() * Rz.matrix();
-    t = 10.0 * MatrixXd::Random(3, 1);
+    t = 2.0 * MatrixXd::Random(3, 1);
     if(t(2, 0) < 0.0){
         t(2, 0) *= -1.0;
     }
@@ -37,11 +37,11 @@ int gen_sequence(const int n, vector<MatrixXd> &Ts){
 }
 
 int T_noise(MatrixXd &T){
-    double noise = 1E-2 * (0.5 - (double) rand() / (RAND_MAX));
+    double noise = 1E-1 * (0.5 - (double) rand() / (RAND_MAX));
     Sophus::SO3d Rx_noise = Sophus::SO3d::rotX(noise);
-    noise = 1E-2 * (0.5 - (double) rand() / (RAND_MAX));
+    noise = 1E-1 * (0.5 - (double) rand() / (RAND_MAX));
     Sophus::SO3d Ry_noise = Sophus::SO3d::rotY(noise);
-    noise = 1E-2 * (0.5 - (double) rand() / (RAND_MAX));
+    noise = 1E-1 * (0.5 - (double) rand() / (RAND_MAX));
     Sophus::SO3d Rz_noise = Sophus::SO3d::rotZ(noise);
     
     T.block<3, 3>(0, 0) = Rx_noise.matrix() * Ry_noise.matrix() * Rz_noise.matrix();
@@ -76,7 +76,7 @@ int gen_points(const int N,
     double mag_t = t.norm();
 
     //default_random_engine generator;
-    //normal_distribution<double> distribution(0.0, 1E-3);
+    //normal_distribution<double> distribution(0.0, 1E-4);
 
     for(int i = 0; i < N; i++){
         MatrixXd x_ = MatrixXd::Zero(1, 3);
@@ -100,5 +100,60 @@ int gen_points(const int N,
         // for(int j = 0; j < 2; j++){
         //     p_(i, j) += distribution(generator);
         // }
+    }
+}
+
+int gen_scene_sequence(const int N,
+                       const int n_zeta,
+                       const vector<pair<int, int> > &reps,
+                       vector<MatrixXd> &Ts,
+                       vector<MatrixXd> &T0s,
+                       vector<MatrixXd> &Xr,
+                       vector<MatrixXd> &pr,
+                       vector<MatrixXd> &p_r
+                       ){
+    // Check validity of reprojection pairs
+    // Works only for global sequences (n_zeta == num of total zetas)
+    const int n_rep = reps.size();
+    assert(n_rep > 0);
+    for(int i = 0; i < n_rep; i++){
+        assert(0 <= reps[i].first && reps[i].first < n_zeta);
+        assert(0 <= reps[i].second && reps[i].second < n_zeta);
+    }
+
+    assert(Ts.size() == 0);
+    assert(T0s.size() == 0);
+    assert(Xr.size() == 0);
+    assert(pr.size() == 0);
+    assert(p_r.size() == 0);
+
+    // Generate pose sequences and add noise to initialization
+    gen_sequence(n_zeta, Ts);
+    noise_sequence(Ts, T0s);
+
+    // Populate reprojection points
+    int z0, z1;
+    for(int i = 0; i < n_rep; i++){
+        z0 = reps[i].first;
+        z1 = reps[i].second;
+
+        MatrixXd T = MatrixXd::Identity(4, 4); // composed T
+        MatrixXd T0 = MatrixXd::Identity(4, 4); // composed T0
+
+        if(z0 <= z1){
+            for(int j = z0; j <= z1; j++){
+                T = Ts[j] * T;
+            }
+        } else {
+            for(int j = z0; j >= z1; j--){
+                T = Ts[j].inverse() * T;
+            }
+        }
+
+        MatrixXd X, p, p_;
+        gen_points(N, T, X, p, p_);
+        Xr.push_back(X);
+        pr.push_back(p);
+        p_r.push_back(p_);
     }
 }
