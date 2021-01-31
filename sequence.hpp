@@ -55,7 +55,7 @@ int noise_sequence(const vector<MatrixXd> &Ts, vector<MatrixXd> &T0s){
         T_noise(Tn);
         Tn = Ts[i] * Tn;
         MatrixXd t = Tn.block<3, 1>(0, 3);
-        t = t / t.norm(); // Comment to test validity of the optimization
+        //t = t / t.norm(); // Comment to test validity of the optimization
         Tn.block<3, 1>(0, 3) = t;
         T0s.push_back(Tn);
     }

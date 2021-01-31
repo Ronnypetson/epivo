@@ -540,8 +540,8 @@ int main(){
     //     //    reps.push_back(make_pair(i + 1, i));
     //     //}
     // }
-    //reps.push_back(make_pair(n_zeta - 1, 0));
-    reps.push_back(make_pair(0, n_zeta - 1));
+    reps.push_back(make_pair(n_zeta - 1, 0));
+    //reps.push_back(make_pair(0, n_zeta - 1));
 
     vector<MatrixXd> Ts, T0s;
     vector<MatrixXd> Xr, pr, p_r;
