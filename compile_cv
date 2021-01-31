@@ -1,0 +1,2 @@
+g++ kitti.cpp -o kitti `pkg-config --libs --cflags opencv`
+
