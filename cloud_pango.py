@@ -34,7 +34,7 @@ def main():
     #R_z = np.linalg.inv(R_z)
     i = 0
     #sleep(5)
-    pangolin.DisplayBase().RecordOnRender("ffmpeg:[fps=10,bps=8388608,unique_filename]//pt_cloud_mov.avi")
+    pangolin.DisplayBase().RecordOnRender("ffmpeg:[fps=10,bps=8388608,unique_filename]//pt_cloud_mov_00.avi")
     while not pangolin.ShouldQuit():
         gl.glClear(gl.GL_COLOR_BUFFER_BIT | gl.GL_DEPTH_BUFFER_BIT)
         gl.glClearColor(1.0, 1.0, 1.0, 1.0)
@@ -42,16 +42,17 @@ def main():
         
         #T_wc = scam.GetModelViewMatrix()
         Ts_ = np.linalg.inv(np.concatenate([Ts[i], dummy], axis=0))
-        Ts_[0] *= -1.0
+        # Forward lookin: negate y and z. Backward: negate x and y
+        #Ts_[0] *= -1.0
         Ts_[1] *= -1.0
-        #Ts_[:3, :3] = R_z * Ts_[:3, :3]
-        #Ts_ = np.concatenate([Ts[i], dummy], axis=0)
-        #T_wc_ = T_wc * pangolin.OpenGlMatrix(Ts_)
+        Ts_[2] *= -1.0
+
+        #Ts_[1, 3] += 100
+
         scam.SetModelViewMatrix(pangolin.OpenGlMatrix(Ts_))
         dcam.Render()
 
         # Draw Point Cloud Nx3
-        #points = np.random.random((10000, 3)) * 3 - 4
         gl.glPointSize(2)
         gl.glColor3f(1.0, 0.0, 0.0)
         pangolin.DrawPoints(X[:L[i + 1]])
@@ -61,7 +62,7 @@ def main():
         i = min(i + 1, len(L) - 2)
 
         pangolin.FinishFrame()
-        sleep(0.1)
+        #sleep(0.1)
 
 
 if __name__ == '__main__':
