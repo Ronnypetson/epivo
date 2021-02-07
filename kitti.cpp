@@ -45,11 +45,11 @@ int main(){
             0.0,      718.8560, 185.2157,
             0.0,      0.0,      1.0;
     cam_ = cam_.inverse();
-    MatrixXd poses = load_csv<MatrixXd>("/home/ronnypetson/dataset/poses/00.txt");
+    MatrixXd poses = load_csv<MatrixXd>("/home/ronnypetson/dataset/poses/06.txt");
     vector<MatrixXd> X;
     vector<int> limits;
     string src_fn, tgt_fn;
-    string base_img = "/home/ronnypetson/dataset/sequences/00/image_0/";
+    string base_img = "/home/ronnypetson/dataset/sequences/06/image_0/";
 
     for(int i = 0; i < 900; i++){
         cout << i << " ";
