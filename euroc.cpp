@@ -85,10 +85,30 @@ void quat_to_R(const MatrixXd q, MatrixXd &R){
 
 
 int main(){
+    int h, w;
+    h = 480;
+    w = 752;
+
     Mat cam = (Mat_<float>(3, 3) << 458.654,  0.0,      367.215,
                                     0.0,      457.296,  248.375,
                                     0.0,      0.0,      1.0);
-    Mat dist = (Mat_<float>(1, 4) << -0.28340811, 0.07395907, 0.00019359, 1.76187114e-05);
+    Mat dist = (Mat_<float>(1, 5) << -0.28340811, 0.07395907, 0.00019359, 1.76187114e-05, 0.0);
+    Mat rect = (Mat_<float>(3, 3) << 0.999966347530033,    -0.001422739138722922, 0.008079580483432283,
+                                     0.001365741834644127,  0.9999741760894847,   0.007055629199258132,
+                                    -0.008089410156878961, -0.007044357138835809, 0.9999424675829176);
+    Mat proj = (Mat_<float>(3, 4) << 435.2046959714599, 0.0,               367.4517211914062, 0.0,
+                                     0.0,               435.2046959714599, 252.2008514404297, 0.0,
+                                     0.0,               0.0,               1.0,               0.0);
+    
+    Mat map1, map2;
+    initUndistortRectifyMap(cam,
+                            dist,
+                            rect,
+                            proj,
+                            Size(w, h),
+                            map1.type(),
+                            map1,
+                            map2);
 
     MatrixXd cam_(3, 3), new_cam_(3, 3), new_cam_inv(3, 3);
     cam_ << 458.654,  0.0,      367.215,
@@ -96,13 +116,24 @@ int main(){
             0.0,      0.0,      1.0; // Change to Euroc MAV camera
     cam_ = cam_.inverse();
 
+    MatrixXd T_DC(4, 4), T_DC_(4, 4);
+    T_DC << 0.0148655429818, -0.999880929698, 0.00414029679422, -0.0216401454975,
+            0.999557249008, 0.0149672133247, 0.025715529948, -0.064676986768,
+            -0.0257744366974, 0.00375618835797, 0.999660727178, 0.00981073058949,
+            0.0, 0.0, 0.0, 1.0;
+    T_DC_ = T_DC.inverse();
+
     //new_cam_ << 334.4389, 0, 366.78262,
     //            0, 333.37289, 248.77432,
     //            0, 0, 1; // alpha = 1.0
     
-    new_cam_ << 356.10941, 0,         362.75427,
-                0,         418.03268, 250.18024,
-                0,         0,         1; //alpha = 0.0
+    //new_cam_ << 356.10941, 0,         362.75427,
+    //            0,         418.03268, 250.18024,
+    //            0,         0,         1; //alpha = 0.0
+
+    new_cam_ << 435.2046959714599, 0.0,               367.4517211914062,
+                0.0,               435.2046959714599, 252.2008514404297,
+                0.0,               0.0,               1.0;
 
     new_cam_inv = new_cam_.inverse();
 
@@ -119,18 +150,18 @@ int main(){
     load_fns(stamps_fn, fns);
 
     int last = min(2200, (int)(fns.size() - 1));
-    int h, w;
 
     Mat new_cam;
     Rect *roi = new Rect();
-    h = 480;
-    w = 752;
-    new_cam = getOptimalNewCameraMatrix(cam,
-                                        dist,
-                                        Size(w, h),
-                                        0.0,
-                                        Size(w, h),
-                                        roi);
+    //new_cam = getOptimalNewCameraMatrix(cam,
+    //                                    dist,
+    //                                    Size(w, h),
+    //                                    0.0,
+    //                                    Size(w, h),
+    //                                    roi);
+    new_cam = (Mat_<float>(3, 3) << 435.2046959714599, 0.0,               367.4517211914062,
+                                    0.0,               435.2046959714599, 252.2008514404297,
+                                    0.0,               0.0,               1.0);
 
     double x, y, _h, _w;
     vector<MatrixXd> all_T;
@@ -147,20 +178,24 @@ int main(){
         //waitKey();
 
         // undistort
-        undistort(src,
-                  src_,
-                  new_cam,
-                  dist);
+        //undistort(src,
+        //          src_,
+        //          new_cam,
+        //          dist);
         // crop the image
-        src_(*roi).copyTo(src);
+        //src_(*roi).copyTo(src);
+        remap(src, src_, map1, map2, INTER_LINEAR);
+        src_.copyTo(src);
         
         // undistort
-        undistort(tgt,
-                  tgt_,
-                  new_cam,
-                  dist);
+        //undistort(tgt,
+        //          tgt_,
+        //          new_cam,
+        //          dist);
         // crop the image
-        tgt_(*roi).copyTo(tgt);
+        //tgt_(*roi).copyTo(tgt);
+        remap(tgt, tgt_, map1, map2, INTER_LINEAR);
+        tgt_.copyTo(tgt);
 
         //imshow("rectified", src);
         //waitKey();
@@ -203,7 +238,7 @@ int main(){
                                    new_cam,
                                    RANSAC,
                                    0.99,
-                                   1.0,
+                                   0.3,
                                    mask_ess);
         
         vector<Point2f> cpt0, cpt1_;
@@ -271,12 +306,20 @@ int main(){
         //T.block<3, 4>(0, 0) = _T.transpose();
         //pT.block<3, 4>(0, 0) = _pT.transpose();
 
-        T = _T;
-        pT = _pT;
+        T = _T * T_DC;
+        pT = _pT * T_DC;
 
         all_T.push_back(pT);
 
         MatrixXd dT = pT.inverse() * T;
+
+        //Mat rot, tr;
+        //recoverPose(ess, cpt0, cpt1_, new_cam, rot, tr); // mask_ess
+        //cout << dT.block<3, 3>(0, 0) << endl << endl;
+        //cout << rot << endl << endl;
+        //double g;
+        //cin >> g;
+
         dT = dT.inverse();
         R = dT.block<3, 3>(0, 0);
         t = dT.block<3, 1>(0, 3);
