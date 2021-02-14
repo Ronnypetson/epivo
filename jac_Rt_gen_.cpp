@@ -5,6 +5,7 @@
 #include <math.h>
 #include <map>
 #include <fstream>
+//#include <cmath>
 #include "sophus/geometry.hpp"
 #include "test_jac_Rt_gen.hpp"
 #include "sequence.hpp"
@@ -362,6 +363,7 @@ int Levenberg_Marquardt(const int n_zeta,
     MatrixXd r0 = MatrixXd::Zero(rep_N, 1);
     MatrixXd J = MatrixXd::Zero(rep_N, zeta_dims);
     MatrixXd H = MatrixXd::Zero(zeta_dims, zeta_dims);
+    //MatrixXd H_ = MatrixXd::Zero(zeta_dims, zeta_dims);
     MatrixXd b = MatrixXd::Zero(zeta_dims, 1);
     MatrixXd delta = MatrixXd::Zero(zeta_dims, 1);
 
@@ -398,9 +400,12 @@ int Levenberg_Marquardt(const int n_zeta,
 
         // Concatenate r0s
         for(int j = 0; j < n_rep; j++){
-            //cout << T0r[j] << endl;
-            //double g;
-            //cin >> g;
+            //if(T0r[j].block<3, 1>(0, 3).norm() < 1E-8
+            //   || T0r[j].block<3, 1>(0, 3).norm() > 1E24){
+            //    cout << T0r[j] << endl;
+            //    double g;
+            //    cin >> g;
+            //}
 
             MatrixXd r0_rep = MatrixXd::Zero(N, 1);
             R0 = T0r[j].block<3, 3>(0, 0);
@@ -452,7 +457,27 @@ int Levenberg_Marquardt(const int n_zeta,
         H = J.transpose() * J;
         H = H + lambda * H.diagonal().asDiagonal().toDenseMatrix();
 
+        //bool invertible = true;
+        //H.computeInverseWithCheck(H_, invertible);
+        //if(H.determinant() > 1E-20){
+        //    break;
+        //}
+
+        //cout << H.determinant() << endl << endl;
+
+        //if(H.determinant() < 1E-300){
+        //    break;
+        //}
+
         delta = -H.inverse() * b;
+
+        if(delta.hasNaN()){
+            break;
+        }
+
+        if(delta.norm() < epsilon){
+            break;
+        }
 
         vector<MatrixXd> T0s_;
         for(int j = 0; j < T0s.size(); j++){
@@ -462,9 +487,9 @@ int Levenberg_Marquardt(const int n_zeta,
             T0s_.push_back(new_T);
         }
 
-        if(delta.norm() < epsilon){
-            break;
-        }
+        //if(delta.norm() < epsilon){
+        //    break;
+        //}
 
         // Compute candidate T0r_
         for(int j = 0; j < n_rep; j++){
@@ -514,15 +539,15 @@ int Levenberg_Marquardt(const int n_zeta,
         }
     }
 
-    cout << " " << H.norm()
-         << " " << r0.norm()
-         << " " << delta.norm()
-         << " " << lambda << endl;
-    cout << endl;
+    // cout << " " << H.norm()
+    //      << " " << r0.norm()
+    //      << " " << delta.norm()
+    //      << " " << lambda << endl;
+    // cout << endl;
 }
 
 
-int main(){
+int _main(){
     srand(time(0));
     const int N = 15; // Number of points of each reprojection
     const int n_zeta = 10;

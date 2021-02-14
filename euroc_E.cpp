@@ -6,13 +6,15 @@
 #include <string>
 #include <sstream>
 #include <iomanip>
+#include <opencv2/core/eigen.hpp>
 
 //#include <opencv2/features2d.hpp>
 //#include <opencv2/imgcodecs.hpp>
 //#include <opencv2/core/core.hpp>
 //#include <opencv2/highgui/highgui.hpp>
 //#include <opencv2/imgproc/imgproc.hpp>
-//#include "jac_Rt_gen_.cpp"
+
+#include "test_jac_Rt_gen.hpp"
 
 using namespace std;
 using namespace cv;
@@ -152,6 +154,7 @@ int main(){
     double x, y, _h, _w;
     vector<MatrixXd> all_T;
     Mat src_, tgt_;
+    MatrixXd cT = MatrixXd::Identity(4, 4);
     for(int i = 28; i < last; i++){
         cout << i << " ";
         src_fn = base_img + fns[i];
@@ -161,12 +164,6 @@ int main(){
         Mat tgt = imread(tgt_fn, IMREAD_GRAYSCALE);
 
         // undistort
-        //undistort(src,
-        //          src_,
-        //          new_cam,
-        //          dist);
-        // crop the image
-        //src_(*roi).copyTo(src);
         remap(src, src_, map1, map2, INTER_LINEAR);
         src_.copyTo(src);
         
@@ -237,7 +234,6 @@ int main(){
                 break;
             }
         }
-
         for(int j = 9.25 * (i - 28); j < poses.rows(); j++){
             if(abs(poses(j, 0) - stod(fns[i + 1])) < 5760512 - 760576){
                 qT = poses.row(j).block<1, 4>(0, 4);
@@ -248,18 +244,82 @@ int main(){
                 break;
             }
         }
-
         assert(cnt_found == 2);
 
-        T = _T * T_DC;
-        pT = _pT * T_DC;
+        // Initialize with essential matrix
+        Mat rot, tr;
+        recoverPose(ess, cpt0, cpt1_, new_cam, rot, tr); // mask_ess
+        MatrixXd dT = MatrixXd::Identity(4, 4);
 
-        all_T.push_back(pT);
+        //T = _T * T_DC;
+        //pT = _pT * T_DC;
 
-        MatrixXd dT = pT.inverse() * T;
+        MatrixXd erot, etr;
+        cv2eigen(rot, erot);
+        cv2eigen(tr, etr);
 
-        //Mat rot, tr;
-        //recoverPose(ess, cpt0, cpt1_, new_cam, rot, tr, mask_ess); // mask_ess
+        //erot = MatrixXd::Identity(3, 3);
+        //etr << 0.0, 0.0, 1.0;
+
+        if(erot.trace() < 3.0 * 0.9){
+            erot = MatrixXd::Identity(3, 3);
+            etr << 0.0, 0.0, 1.0;
+        }
+
+        if(etr.norm() < 1E-5){
+            etr << 0.0, 0.0, 1.0;
+        }
+
+        // Run Levenberg-Marquardt
+        vector<pair<int, int> > reps;
+        reps.push_back(make_pair(0, 0));
+
+        vector<MatrixXd> T0s;
+        dT.block<3, 3>(0, 0) = erot;
+        dT.block<3, 1>(0, 3) = etr;
+        T0s.push_back(dT); // dT.inverse()
+
+        vector<MatrixXd> pr, p_r;
+        int N = min(48, (int)cpt0.size());
+        MatrixXd pr_(N, 3), p_r_(N, 3);
+        for(int j = 0; j < N; j++){
+            pr_.row(j) << cpt0[j].x, cpt0[j].y, 1.0;
+            p_r_.row(j) << cpt1_[j].x, cpt1_[j].y, 1.0;
+
+            pr_.row(j) = new_cam_inv * pr_.row(j).transpose();
+            p_r_.row(j) = new_cam_inv * p_r_.row(j).transpose();
+        }
+        pr.push_back(pr_);
+        p_r.push_back(p_r_);
+
+        // Levenberg_Marquardt(1,
+        //                     1e-8,
+        //                     reps,
+        //                     1e-2,
+        //                     T0s,
+        //                     pr,
+        //                     p_r);
+        
+        dT = ((_pT * T_DC).inverse() * (_T * T_DC)).inverse();
+        double scale = dT.block<3, 1>(0, 3).norm();
+        T0s[0].block<3, 1>(0, 3) /= T0s[0].block<3, 1>(0, 3).norm();
+        dT.block<3, 1>(0, 3) = T0s[0].block<3, 1>(0, 3) * scale;
+        dT.block<3, 3>(0, 0) = T0s[0].block<3, 3>(0, 0);
+        
+        dT = dT.inverse();
+
+        //cout << (_pT * T_DC).inverse() * (_T * T_DC) << endl << endl;
+        //cout << dT << endl << endl;
+        //double g;
+        //cin >> g;
+
+        pT = cT; // * T_DC;
+        cT = cT * dT;
+        T = cT; // * T_DC;
+
+        all_T.push_back(pT); // * T_DC
+
+        //MatrixXd dT = pT.inverse() * T;
 
         dT = dT.inverse();
         R = dT.block<3, 3>(0, 0);
