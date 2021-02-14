@@ -48,7 +48,7 @@ int main(){
     string src_fn, tgt_fn;
     string base_img = "/home/ronnypetson/dataset/sequences/00/image_0/";
 
-    vector<MatrixXd> all_T;
+    vector<MatrixXd> all_T, all_GT;
     MatrixXd cT = MatrixXd::Identity(4, 4);
     for(int i = 0; i < 900; i++){
         cout << i << " ";
@@ -98,8 +98,8 @@ int main(){
                                    _cpt1_,
                                    cam,
                                    RANSAC,
-                                   0.99,
-                                   1.0,
+                                   0.999,
+                                   0.3,
                                    mask_ess);
         
         vector<Point2f> cpt0, cpt1_;
@@ -155,13 +155,13 @@ int main(){
         pr.push_back(pr_);
         p_r.push_back(p_r_);
 
-        Levenberg_Marquardt(1,
-                            1e-8,
-                            reps,
-                            1e-2,
-                            T0s,
-                            pr,
-                            p_r);
+        // Levenberg_Marquardt(1,
+        //                     1e-8,
+        //                     reps,
+        //                     1e-2,
+        //                     T0s,
+        //                     pr,
+        //                     p_r);
 
         MatrixXd R(3, 3), t(3, 1);
         MatrixXd T = MatrixXd::Identity(4, 4);
@@ -175,22 +175,20 @@ int main(){
 
         T.block<3, 4>(0, 0) = _T.transpose();
         pT.block<3, 4>(0, 0) = _pT.transpose();
+        all_GT.push_back(pT);
 
         // point dT
         MatrixXd dT = (pT.inverse() * T).inverse();
-
-        //cout << dT << endl << endl;
-        //cout << T0s[0] << endl << endl;
-        //double g;
-        //cin >> g;
 
         double scale = dT.block<3, 1>(0, 3).norm();
         T0s[0].block<3, 1>(0, 3) /= T0s[0].block<3, 1>(0, 3).norm();
         dT.block<3, 1>(0, 3) = T0s[0].block<3, 1>(0, 3) * scale;
         dT.block<3, 3>(0, 0) = T0s[0].block<3, 3>(0, 0);
 
-        cT = cT * dT.inverse();
+        MatrixXd pT_ = cT;
+
         all_T.push_back(cT);
+        cT = cT * dT.inverse();
 
         // point dT
         //dT = dT.inverse();
@@ -212,14 +210,14 @@ int main(){
             B = p_ * R * cp;
             if(B.norm() > 1E-2){
                 d = A.norm() / B.norm();
-                x_ = pT.block<3, 3>(0, 0) * (d * cp)
-                    + pT.block<3, 1>(0, 3); // debug
+                x_ = pT_.block<3, 3>(0, 0) * (d * cp)
+                    + pT_.block<3, 1>(0, 3); // debug
                 X.push_back(x_);
             }
         }
     }
 
-    ofstream pt_cloud, lims, poses_f;
+    ofstream pt_cloud, lims, poses_f, poses_gt;
     pt_cloud.open("pts.cld");
 
     for(int i = 0; i < X.size(); i++){
@@ -242,6 +240,13 @@ int main(){
     }
 
     poses_f.close();
+
+    poses_gt.open("kitti.GT");
+    for(int i = 0; i < all_GT.size(); i++){
+        poses_gt << all_GT[i] << "\n\n";
+    }
+
+    poses_gt.close();
 
     //Mat ess = findEssentialMat(cpt0, cpt1_, cam);
     //Mat rot, tr;
