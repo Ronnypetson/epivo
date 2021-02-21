@@ -195,7 +195,7 @@ int main(){
             double uncert;
             uncert = Levenberg_Marquardt(1, 1e-8, reps, 1e-2, T0s, pr, p_r);
             cout << uncert << endl << endl;
-            if(uncert > 1e-4){
+            if(uncert > 1e-6){
                 T0s = bT0s;
             }
         }

@@ -14,7 +14,7 @@ using namespace std;
 using namespace Eigen;
 
 
-const double huber_delta = 1.0;
+const double huber_delta = 1E0;
 const int rep_max = 128;
 //map<pair<int, int>, MatrixXd> T_mem;
 MatrixXd T0_mem[rep_max][rep_max];
@@ -284,14 +284,14 @@ void RepJacobian::compute(const MatrixXd &p,
 }
 
 
-int Levenberg_Marquardt(const int n_zeta,
-                        const double epsilon,
-                        const vector<pair<int, int> > &reps,
-                        const double lambda0,
-                        vector<MatrixXd> &T0s,
-                        vector<MatrixXd> &pr,
-                        vector<MatrixXd> &p_r
-                        ){
+double Levenberg_Marquardt(const int n_zeta,
+                            const double epsilon,
+                            const vector<pair<int, int> > &reps,
+                            const double lambda0,
+                            vector<MatrixXd> &T0s,
+                            vector<MatrixXd> &pr,
+                            vector<MatrixXd> &p_r
+                            ){
     // srand(time(0));
     const int N = pr[0].rows(); // Number of points of each reprojection
     // const int n_zeta = 32;
@@ -371,7 +371,7 @@ int Levenberg_Marquardt(const int n_zeta,
     //double lambda = 0.01;
     double lambda = lambda0;
     double prev_E = 1E10;
-    for(int i = 0; i < 60; i++){
+    for(int i = 0; i < 20; i++){
         r0 = MatrixXd::Zero(rep_N, 1);
         J = MatrixXd::Zero(rep_N, zeta_dims);
 
@@ -544,6 +544,9 @@ int Levenberg_Marquardt(const int n_zeta,
     //      << " " << delta.norm()
     //      << " " << lambda << endl;
     // cout << endl;
+    //return H.norm();
+    //return r0.norm();
+    return lambda;
 }
 
 
