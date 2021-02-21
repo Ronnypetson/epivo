@@ -33,6 +33,7 @@ M load_csv (const std::string & path) {
     return Map<const Matrix<typename M::Scalar, M::RowsAtCompileTime, M::ColsAtCompileTime, RowMajor>>(values.data(), rows, values.size()/rows);
 }
 
+
 int main(){
     Mat cam = (Mat_<float>(3,3) << 718.8560, 0.0, 607.1928,
                                     0.0, 718.8560, 185.2157,
@@ -67,7 +68,7 @@ int main(){
         //cout << " Image size :" << tgt.rows << " " << tgt.cols << "\n";
         
         vector<KeyPoint> kp0, kp_; // kp1,
-        Ptr<FastFeatureDetector> detector=FastFeatureDetector::create();
+        Ptr<FastFeatureDetector> detector = FastFeatureDetector::create(40);
         vector<Mat> descriptor;
 
         detector->detect(src, kp0, Mat());
@@ -97,9 +98,9 @@ int main(){
         Mat ess = findEssentialMat(_cpt0,
                                    _cpt1_,
                                    cam,
-                                   RANSAC,
-                                   0.999,
-                                   0.3,
+                                   LMEDS,
+                                   0.99,
+                                   0.01,
                                    mask_ess);
         
         vector<Point2f> cpt0, cpt1_;
@@ -115,7 +116,8 @@ int main(){
 
         // Initialize
         Mat rot, tr;
-        recoverPose(ess, cpt0, cpt1_, cam, rot, tr); // mask_ess
+        vector<uchar> rec_mask;
+        recoverPose(ess, cpt0, cpt1_, cam, rot, tr, rec_mask); // mask_ess
 
         MatrixXd erot(3, 3), etr(3, 1);
         cv2eigen(rot, erot);
@@ -125,11 +127,11 @@ int main(){
 
         if(erot.trace() < 3.0 * 0.9){
             erot = MatrixXd::Identity(3, 3);
-            etr << 0.0, 0.0, 1.0;
+            etr << 0.1, 0.1, -0.9;
         }
 
         if(etr.norm() < 1E-5){
-            etr << 0.0, 0.0, 1.0;
+            etr << 0.1, 0.1, -0.9; // -1.0
         }
 
         // Run Levenberg-Marquardt
@@ -141,27 +143,62 @@ int main(){
         T0_0.block<3, 3>(0, 0) = erot;
         T0_0.block<3, 1>(0, 3) = etr;
         T0s.push_back(T0_0); // .inverse()
+        vector<MatrixXd> bT0s(T0s);
 
         vector<MatrixXd> pr, p_r;
-        int N = min(48, (int)cpt0.size());
-        MatrixXd pr_(N, 3), p_r_(N, 3);
-        for(int j = 0; j < N; j++){
-            pr_.row(j) << cpt0[j].x, cpt0[j].y, 1.0;
-            p_r_.row(j) << cpt1_[j].x, cpt1_[j].y, 1.0;
 
-            pr_.row(j) = cam_ * pr_.row(j).transpose();
-            p_r_.row(j) = cam_ * p_r_.row(j).transpose();
+        // vector<MatrixXd> fcpt0, fcpt1;
+        // for(int j = 0; j < cpt0.size(); j++){
+        //     MatrixXd cp0(3, 1), cp1(3, 1);
+        //     cp0 << cpt0[j].x, cpt0[j].y, 1.0;
+        //     cp1 << cpt1_[j].x, cpt1_[j].y, 1.0;
+        //     if((cp0 - cp1).norm() >= 5.0){
+        //         cp0 = cam_ * cp0;
+        //         cp1 = cam_ * cp1;
+        //         fcpt0.push_back(cp0);
+        //         fcpt1.push_back(cp1);
+        //     }
+        // }
+        // int N = min(200, (int)fcpt0.size());
+        // MatrixXd pr_(N, 3), p_r_(N, 3);
+        // for(int j = 0; j < N; j++){
+        //     pr_.row(j) = fcpt0[j].transpose();
+        //     p_r_.row(j) = fcpt1[j].transpose();
+        // }
+        // assert((int)fcpt0.size() >= 15);
+
+        int N = min(10, (int)cpt0.size());
+        int N_mask = 0;
+        assert(N >= 10);
+        MatrixXd pr_(N, 3), p_r_(N, 3);
+        for(int j = 0; N_mask < N && j < rec_mask.size(); j++){
+            //cout << (int)rec_mask[j] << endl;
+            int j_ = N_mask;
+            if((int)rec_mask[j] == 255){
+                pr_.row(j_) << cpt0[j_].x, cpt0[j_].y, 1.0;
+                p_r_.row(j_) << cpt1_[j_].x, cpt1_[j_].y, 1.0;
+
+                pr_.row(j_) = cam_ * pr_.row(j_).transpose();
+                p_r_.row(j_) = cam_ * p_r_.row(j_).transpose();
+
+                N_mask++;
+            }
         }
+        //cout << rec_mask.size() << endl;
+        //cout << N_mask << " " << N << endl << endl;
+        //assert(N_mask == N);
+        
         pr.push_back(pr_);
         p_r.push_back(p_r_);
 
-        // Levenberg_Marquardt(1,
-        //                     1e-8,
-        //                     reps,
-        //                     1e-2,
-        //                     T0s,
-        //                     pr,
-        //                     p_r);
+        if(N_mask == N){
+            double uncert;
+            uncert = Levenberg_Marquardt(1, 1e-8, reps, 1e-2, T0s, pr, p_r);
+            cout << uncert << endl << endl;
+            if(uncert > 1e-4){
+                T0s = bT0s;
+            }
+        }
 
         MatrixXd R(3, 3), t(3, 1);
         MatrixXd T = MatrixXd::Identity(4, 4);
