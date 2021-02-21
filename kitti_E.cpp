@@ -167,9 +167,9 @@ int main(){
         // }
         // assert((int)fcpt0.size() >= 15);
 
-        int N = min(10, (int)cpt0.size());
+        int N = min(48, (int)cpt0.size());
         int N_mask = 0;
-        assert(N >= 10);
+        assert(N >= 48);
         MatrixXd pr_(N, 3), p_r_(N, 3);
         for(int j = 0; N_mask < N && j < rec_mask.size(); j++){
             //cout << (int)rec_mask[j] << endl;
@@ -195,7 +195,7 @@ int main(){
             double uncert;
             uncert = Levenberg_Marquardt(1, 1e-8, reps, 1e-2, T0s, pr, p_r);
             cout << uncert << endl << endl;
-            if(uncert > 1e-6){
+            if(uncert > 1E-9){
                 T0s = bT0s;
             }
         }

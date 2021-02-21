@@ -44,7 +44,7 @@ int extract_kp(const string base_img,
     assert(img_fns.size() == 0);
 
     Mat src;
-    Ptr<FastFeatureDetector> detector = FastFeatureDetector::create();
+    Ptr<FastFeatureDetector> detector = FastFeatureDetector::create(40);
     for(int i = 0; i < num_frames; i++){
         string src_fn;
         src_fn = base_img;
@@ -86,7 +86,6 @@ int robust_ass(const vector<pair<int, int> > window,
     Mat src, tgt;
     int i0, i1;
     string src_fn, tgt_fn;
-    vector<Point2f> pt0, pt1;
 
     for(int i = 0; i < num_frames; i += stride){
         for(int j = 0; j < window.size(); j++){
@@ -97,17 +96,22 @@ int robust_ass(const vector<pair<int, int> > window,
                 continue;
             }
 
-            while(source_kp.size() + 1 < max(i0, i1)){
+            if(max(i0, i1) >= num_frames){
+                break;
+            }
+
+            while(source_kp.size() < max(i0, i1) + 1){
                 this_thread::sleep_for(chrono::milliseconds(10));
             }
 
             src_fn = img_fns[i0];
             tgt_fn = img_fns[i1];
+
             src = imread(src_fn, IMREAD_GRAYSCALE);
             tgt = imread(tgt_fn, IMREAD_GRAYSCALE);
 
+            vector<Point2f> pt0, pt1;
             pt0 = source_kp[i0];
-            pt1 = source_kp[i1];
 
             calcOpticalFlowPyrLK(src, tgt, pt0, pt1, status, err);
 
@@ -120,7 +124,7 @@ int robust_ass(const vector<pair<int, int> > window,
             }
 
             vector<uchar> mask_ess;
-            Mat ess = findEssentialMat(_cpt0, _cpt1, cam, RANSAC, 0.999, 0.3, mask_ess);
+            Mat ess = findEssentialMat(_cpt0, _cpt1, cam, LMEDS, 0.99, 0.01, mask_ess);
 
             vector<Point2f> cpt0, cpt1;
             for(int k = 0; k < mask_ess.size(); k++){
@@ -131,7 +135,8 @@ int robust_ass(const vector<pair<int, int> > window,
             }
 
             // Initialize
-            Mat rot, tr, rec_mask;
+            Mat rot, tr;
+            vector<uchar> rec_mask;
             recoverPose(ess, cpt0, cpt1, cam, rot, tr, rec_mask);
 
             MatrixXd erot(3, 3), etr(3, 1);
@@ -140,16 +145,24 @@ int robust_ass(const vector<pair<int, int> > window,
 
             if(erot.trace() < 3.0 * 0.9){
                 erot = MatrixXd::Identity(3, 3);
-                etr << 0.0, 0.0, 1.0;
+                etr << 0.1, 0.1, -0.9;
             }
 
             if(etr.norm() < 1E-5){
-                etr << 0.0, 0.0, 1.0;
+                etr << 0.1, 0.1, -0.9;
+            }
+
+            vector<Point2f> fpt0, fpt1;
+            for(int k = 0; k < rec_mask.size(); k++){
+                if((int)rec_mask[k] == 255){
+                    fpt0.push_back(cpt0[k]);
+                    fpt1.push_back(cpt1[k]);
+                }
             }
 
             reproj rep;
-            rep.p0 = cpt0;
-            rep.p1 = cpt1;
+            rep.p0 = fpt0;
+            rep.p1 = fpt1;
             rep.R = erot;
             rep.t = etr;
             reprojs.insert(make_pair(make_pair(i0, i1), rep));
@@ -186,9 +199,22 @@ int main(){
                         ref(key_points),
                         ref(img_fns));
     
+    vector<pair<int, int> > window;
+    window.push_back(make_pair(0, 1));
+    window.push_back(make_pair(1, 2));
+    window.push_back(make_pair(0, 2));
+
+    map<pair<int, int>, reproj> reprojs;
+
+    thread match_kp(robust_ass, window, 1, num_frames,
+                    ref(key_points), ref(img_fns), cam, ref(reprojs));
+
     kp_extractor.join();
+    match_kp.join();
+
     cout << key_points.size() << endl << endl;
     cout << key_points[0].size() << endl << endl;
+    cout << reprojs.size() << endl << endl;
     exit(0);
 
     for(int i = 0; i < num_frames; i++){

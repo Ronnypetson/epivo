@@ -371,7 +371,7 @@ double Levenberg_Marquardt(const int n_zeta,
     //double lambda = 0.01;
     double lambda = lambda0;
     double prev_E = 1E10;
-    for(int i = 0; i < 20; i++){
+    for(int i = 0; i < 30; i++){
         r0 = MatrixXd::Zero(rep_N, 1);
         J = MatrixXd::Zero(rep_N, zeta_dims);
 
