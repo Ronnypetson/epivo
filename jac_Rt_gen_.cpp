@@ -285,90 +285,38 @@ void RepJacobian::compute(const MatrixXd &p,
 
 
 double Levenberg_Marquardt(const int n_zeta,
-                            const double epsilon,
-                            const vector<pair<int, int> > &reps,
-                            const double lambda0,
-                            vector<MatrixXd> &T0s,
-                            vector<MatrixXd> &pr,
-                            vector<MatrixXd> &p_r
-                            ){
+                           const double epsilon,
+                           const vector<pair<int, int> > &reps,
+                           const vector<double> &wreps,
+                           const double lambda0,
+                           vector<MatrixXd> &T0s,
+                           vector<MatrixXd> &pr,
+                           vector<MatrixXd> &p_r
+                           ){
+    assert(reps.size() == wreps.size());
     // srand(time(0));
     const int N = pr[0].rows(); // Number of points of each reprojection
-    // const int n_zeta = 32;
-    // vector<pair<int, int> > reps; // First zeta, last zeta. NOT first and last frames
-    // double epsilon = 1E-8;
     const int eps_dim = 6;
-
-    // for(int i = 0; i < n_zeta; i++){
-    //     for(int j = i; j < n_zeta; j++){
-    //         reps.push_back(make_pair(i, j));
-    //     }
-    // }
-
-    // for(int i = 0; i < n_zeta; i++){
-    //     //reps.push_back(make_pair(i, i));
-    //     reps.push_back(make_pair(i, min(i + 1, n_zeta - 1)));
-    //     reps.push_back(make_pair(min(i + 1, n_zeta - 1), i));
-    //     reps.push_back(make_pair(i, min(i + 2, n_zeta - 1)));
-    //     reps.push_back(make_pair(min(i + 2, n_zeta - 1), i));
-    // }
-    //reps.push_back(make_pair(1, 1));
-    //reps.push_back(make_pair(0, 1));
-
     const int n_rep = reps.size();
 
-    //vector<MatrixXd> Ts, T0s;
-    // gen_sequence(n_zeta, Ts);
-    // vector<MatrixXd> T0s;
-    // noise_sequence(Ts, T0s);
-
     // Compute reprojection data
-    vector<MatrixXd> T0r, T0r_; // Tr,
-    //vector<MatrixXd> Xr, pr, p_r;
+    vector<MatrixXd> T0r, T0r_;
     MatrixXd R0(3, 3), t0(3, 1);
-    // for(int i = 0; i < n_rep; i++){
-        // int z0, z1;
-        // z0 = reps[i].first;
-        // z1 = reps[i].second;
-        // MatrixXd T = MatrixXd::Identity(4, 4); // composed T
-        // MatrixXd T0 = MatrixXd::Identity(4, 4); // composed T0
-        // if(z0 <= z1){
-        //     for(int j = z0; j <= z1; j++){
-        //         T = Ts[j] * T;
-        //     }
-        // } else {
-        //     for(int j = z0; j >= z1; j--){
-        //         T = Ts[j].inverse() * T;
-        //     }
-        // }
-        // T0r.push_back(T0);
-        // //Tr.push_back(T); // obsolete
-        // T0r_.push_back(T0);
-        // MatrixXd X, p, p_;
-        // gen_points(N, T, X, p, p_);
-        // Xr.push_back(X);
-        // pr.push_back(p);
-        // p_r.push_back(p_);
-    // }
 
     for(int i = 0; i < n_rep; i++){
         T0r.push_back(MatrixXd::Identity(4, 4));
         T0r_.push_back(MatrixXd::Identity(4, 4));
     }
 
-    //gen_scene_sequence(N, n_zeta, reps, Ts, T0s, Xr, pr, p_r);
-
     const int zeta_dims = n_zeta * eps_dim;
     const int rep_N = n_rep * N;
     MatrixXd r0 = MatrixXd::Zero(rep_N, 1);
     MatrixXd J = MatrixXd::Zero(rep_N, zeta_dims);
     MatrixXd H = MatrixXd::Zero(zeta_dims, zeta_dims);
-    //MatrixXd H_ = MatrixXd::Zero(zeta_dims, zeta_dims);
     MatrixXd b = MatrixXd::Zero(zeta_dims, 1);
     MatrixXd delta = MatrixXd::Zero(zeta_dims, 1);
 
     // Levenberg-Marquardt
-    //double lambda = 0.01;
     double lambda = lambda0;
     double prev_E = 1E10;
     for(int i = 0; i < 30; i++){
@@ -381,7 +329,7 @@ double Levenberg_Marquardt(const int n_zeta,
             T0_mem[j][j] = T0s[j];
             for(int k = j + 1; k < n_zeta; k++){
                 sT = T0s[k] * sT;
-                T0_mem[j][k] = sT; // .replicate(1, 1)
+                T0_mem[j][k] = sT;
             }
         }
 
@@ -400,20 +348,14 @@ double Levenberg_Marquardt(const int n_zeta,
 
         // Concatenate r0s
         for(int j = 0; j < n_rep; j++){
-            //if(T0r[j].block<3, 1>(0, 3).norm() < 1E-8
-            //   || T0r[j].block<3, 1>(0, 3).norm() > 1E24){
-            //    cout << T0r[j] << endl;
-            //    double g;
-            //    cin >> g;
-            //}
-
             MatrixXd r0_rep = MatrixXd::Zero(N, 1);
             R0 = T0r[j].block<3, 3>(0, 0);
             t0 = T0r[j].block<3, 1>(0, 3);
 
             res(R0, t0, pr[j], p_r[j], r0_rep);
             //r0.block<N, 1>(j * N, 0) = r0_rep;
-            r0.block(j * N, 0, N, 1) = r0_rep;
+            //r0.block(j * N, 0, N, 1) = r0_rep;
+            r0.block(j * N, 0, N, 1) = wreps[j] * r0_rep;
         }
 
         // Concatenate J through zetas and reprojections
@@ -457,18 +399,6 @@ double Levenberg_Marquardt(const int n_zeta,
         H = J.transpose() * J;
         H = H + lambda * H.diagonal().asDiagonal().toDenseMatrix();
 
-        //bool invertible = true;
-        //H.computeInverseWithCheck(H_, invertible);
-        //if(H.determinant() > 1E-20){
-        //    break;
-        //}
-
-        //cout << H.determinant() << endl << endl;
-
-        //if(H.determinant() < 1E-300){
-        //    break;
-        //}
-
         delta = -H.inverse() * b;
 
         if(delta.hasNaN()){
@@ -486,10 +416,6 @@ double Levenberg_Marquardt(const int n_zeta,
             MatrixXd new_T = T0s[j] * delta_T;
             T0s_.push_back(new_T);
         }
-
-        //if(delta.norm() < epsilon){
-        //    break;
-        //}
 
         // Compute candidate T0r_
         for(int j = 0; j < n_rep; j++){
@@ -523,8 +449,6 @@ double Levenberg_Marquardt(const int n_zeta,
             r0.block(j * N, 0, N, 1) = r0_rep;
         }
 
-        //cout << "candidate r0" << endl << endl;
-
         double curr_E = r0.norm();
         if(curr_E < prev_E){
             prev_E = curr_E;
@@ -539,11 +463,6 @@ double Levenberg_Marquardt(const int n_zeta,
         }
     }
 
-    // cout << " " << H.norm()
-    //      << " " << r0.norm()
-    //      << " " << delta.norm()
-    //      << " " << lambda << endl;
-    // cout << endl;
     //return H.norm();
     //return r0.norm();
     return lambda;
@@ -576,13 +495,13 @@ int _main(){
     gen_scene_sequence(N, n_zeta, reps, Ts, T0s, Xr, pr, p_r);
 
     double lambda0 = 0.01;
-    Levenberg_Marquardt(n_zeta,
-                        epsilon,
-                        reps,
-                        lambda0,
-                        T0s,
-                        pr,
-                        p_r);
+    // Levenberg_Marquardt(n_zeta,
+    //                     epsilon,
+    //                     reps,
+    //                     lambda0,
+    //                     T0s,
+    //                     pr,
+    //                     p_r);
     
     // Save output
     ofstream est, gt;

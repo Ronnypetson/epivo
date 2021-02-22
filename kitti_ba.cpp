@@ -171,6 +171,110 @@ int robust_ass(const vector<pair<int, int> > window,
 }
 
 
+int bundle_adjustment(map<pair<int, int>, reproj> &reprojs,
+                      const vector<pair<int, int> > window,
+                      const int stride,
+                      const int num_frames,
+                      const Mat cam,
+                      vector<MatrixXd> &opt_T){
+    assert(stride > 0);
+    assert(opt_T.size() == 0);
+
+    for(int i = 0; i < num_frames; i++){
+        opt_T.push_back(MatrixXd::Identity(4, 4));
+    }
+
+    MatrixXd cam_;
+    cv2eigen(cam, cam_);
+    cam_ = cam_.inverse();
+
+    int i0, i1, w0, w1, N;
+    const int min_pt = 48;
+    bool _exit = false;
+    for(int i = 0; i < num_frames; i += stride){
+        cout << i << endl;
+        w0 = num_frames + 1;
+        w1 = -1;
+        // Check if the reprojs are available
+        for(int j = 0; j < window.size(); j++){
+            i0 = i + window[j].first;
+            i1 = i + window[j].second;
+            w0 = min(w0, min(i0, i1));
+            w1 = max(w1, max(i0, i1));
+
+            if(max(i0, i1) >= num_frames){
+                _exit = true;
+                break;
+            }
+
+            while(reprojs.find(make_pair(i0, i1)) == reprojs.end()){
+                this_thread::sleep_for(chrono::milliseconds(20));
+            }
+        }
+        if(_exit){
+            break;
+        }
+
+        // Run Levenberg-Marquardt
+        vector<pair<int, int> > reps;
+        vector<MatrixXd> pr, p_r;
+        vector<double> wreps;
+        for(int j = 0; j < window.size(); j++){
+            i0 = i + window[j].first;
+            i1 = i + window[j].second;
+            reps.push_back(make_pair(window[j].first, window[j].second - 1));
+
+            reproj r = reprojs[make_pair(i0, i1)];
+            N = min(min_pt, (int)r.p0.size());
+            if(N < min_pt){
+                wreps.push_back(0.0);
+                pr.push_back(MatrixXd::Ones(min_pt, 3));
+                p_r.push_back(MatrixXd::Ones(min_pt, 3));
+            } else {
+                wreps.push_back(1.0);
+                MatrixXd pr_(N, 3), p_r_(N, 3);
+                for(int k = 0; k < N; k++){
+                    pr_.row(k) << r.p0[k].x, r.p0[k].y, 1.0;
+                    p_r_.row(k) << r.p1[k].x, r.p1[k].y, 1.0;
+
+                    pr_.row(k) = cam_ * pr_.row(k).transpose();
+                    p_r_.row(k) = cam_ * p_r_.row(k).transpose();
+                }
+                
+                pr.push_back(pr_);
+                p_r.push_back(p_r_);
+            }
+        }
+
+        vector<MatrixXd> T0s;
+        for(int j = w0; j < w1; j++){
+            MatrixXd T0_0 = MatrixXd::Identity(4, 4);
+            reproj r = reprojs[make_pair(j, j + 1)];
+            T0_0.block<3, 3>(0, 0) = r.R;
+            T0_0.block<3, 1>(0, 3) = r.t;
+            T0s.push_back(T0_0);
+        }
+        
+        vector<MatrixXd> bT0s(T0s);
+
+        //cout << "LM" << endl << endl;
+
+        double uncert;
+        int nzeta = w1 - w0;
+
+        uncert = Levenberg_Marquardt(nzeta, 1e-8, reps, wreps, 1e-2, T0s, pr, p_r);
+        cout << uncert << endl << endl;
+        if(uncert > 1e-6){
+           T0s = bT0s;
+        }
+
+        for(int j = w0; j < w1; j++){
+            opt_T[j] = T0s[j - w0];
+        }
+    }
+}
+
+
 int main(){
     Mat cam = (Mat_<float>(3,3) << 718.8560, 0.0, 607.1928,
                                     0.0, 718.8560, 185.2157,
@@ -190,6 +294,7 @@ int main(){
     MatrixXd cT = MatrixXd::Identity(4, 4);
 
     const int num_frames = 100;
+    const int stride = 1;
     vector<vector<Point2f> > key_points;
     vector<string> img_fns;
 
@@ -206,15 +311,21 @@ int main(){
 
     map<pair<int, int>, reproj> reprojs;
 
-    thread match_kp(robust_ass, window, 1, num_frames,
+    thread match_kp(robust_ass, window, stride, num_frames,
                     ref(key_points), ref(img_fns), cam, ref(reprojs));
+    
+    vector<MatrixXd> opt_T;
+    thread ba_lm(bundle_adjustment, ref(reprojs), window,
+                 stride, num_frames, cam, ref(opt_T));
 
     kp_extractor.join();
     match_kp.join();
+    ba_lm.join();
 
     cout << key_points.size() << endl << endl;
     cout << key_points[0].size() << endl << endl;
     cout << reprojs.size() << endl << endl;
+    cout << opt_T[0] << endl << endl;
     exit(0);
 
     for(int i = 0; i < num_frames; i++){
@@ -342,12 +453,12 @@ int main(){
         pr.push_back(pr_);
         p_r.push_back(p_r_);
 
-        double uncert;
-        uncert = Levenberg_Marquardt(1, 1e-8, reps, 1e-2, T0s, pr, p_r);
-        cout << uncert << endl << endl;
-        if(uncert > 1e-6){
-           T0s = bT0s;
-        }
+        //double uncert;
+        //uncert = Levenberg_Marquardt(1, 1e-8, reps, 1e-2, T0s, pr, p_r);
+        //cout << uncert << endl << endl;
+        //if(uncert > 1e-6){
+        //   T0s = bT0s;
+        //}
 
         MatrixXd R(3, 3), t(3, 1);
         MatrixXd T = MatrixXd::Identity(4, 4);
