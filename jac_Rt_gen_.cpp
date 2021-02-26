@@ -376,7 +376,8 @@ double Levenberg_Marquardt(const int n_zeta,
                 //    J.block<N, eps_dim>(j * N, k * eps_dim)
                 //            = Jrep.block<N, eps_dim>(0, (k - z0) * eps_dim);
                 //}
-                J.block(j * N, z0 * eps_dim, N, (z1 - z0 + 1) * eps_dim) = Jrep;
+                //J.block(j * N, z0 * eps_dim, N, (z1 - z0 + 1) * eps_dim) = Jrep;
+                J.block(j * N, z0 * eps_dim, N, (z1 - z0 + 1) * eps_dim) = wreps[j] * Jrep;
             } else {
                 MatrixXd Jrep = MatrixXd::Zero(N, (z0 - z1 + 1) * eps_dim);
                 for(int k = z0; k >= z1; k--){
@@ -391,7 +392,8 @@ double Levenberg_Marquardt(const int n_zeta,
                 //    J.block<N, eps_dim>(j * N, k * eps_dim)
                 //            = Jrep.block<N, eps_dim>(0, (k - z1) * eps_dim);
                 //}
-                J.block(j * N, z1 * eps_dim, N, (z0 - z1 + 1) * eps_dim) = Jrep;
+                //J.block(j * N, z1 * eps_dim, N, (z0 - z1 + 1) * eps_dim) = Jrep;
+                J.block(j * N, z1 * eps_dim, N, (z0 - z1 + 1) * eps_dim) = wreps[j] * Jrep;
             }
         }
 
