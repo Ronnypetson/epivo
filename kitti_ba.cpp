@@ -65,6 +65,51 @@ int extract_kp(const string base_img,
 }
 
 
+int extract_good_kp(const string base_img,
+                    const int num_frames,
+                    vector<vector<Point2f> > &key_points,
+                    vector<string> &img_fns,
+                    vector<Mat> &descs){
+    assert(key_points.size() == 0);
+    assert(img_fns.size() == 0);
+
+    Mat src;
+    //SurfFeatureDetector detector(minHessian);
+    //SurfDescriptorExtractor extractor;
+    //OrbFeatureDetector detector;
+    //OrbDescriptorExtractor extractor;
+
+    Ptr<ORB> orb = ORB::create(10000, 1.2f, 8, 15, 0, 2, ORB::FAST_SCORE);
+
+    //Ptr<FastFeatureDetector> detector = FastFeatureDetector::create(40);
+
+    for(int i = 0; i < num_frames; i++){
+        string src_fn;
+        src_fn = base_img;
+        stringstream ss0;
+        ss0 << setw(6) << setfill('0') << i;
+        src_fn += ss0.str() + ".png";
+
+        src = imread(src_fn, IMREAD_GRAYSCALE);
+
+        vector<KeyPoint> kp0;
+        orb->detect(src, kp0, Mat());
+        //detector.detect(src, kp0);
+
+        vector<Point2f> pt0;
+        cv::KeyPoint::convert(kp0, pt0);
+
+        Mat desc0;
+        //extractor.compute(src, kp0, desc0);
+        orb->compute(src, kp0, desc0);
+
+        key_points.push_back(pt0);
+        img_fns.push_back(src_fn);
+        descs.push_back(desc0);
+    }
+}
+
+
 struct reproj{
     vector<Point2f> p0, p1;
     MatrixXd R, t;
@@ -124,7 +169,8 @@ int robust_ass(const vector<pair<int, int> > window,
             }
 
             vector<uchar> mask_ess;
-            Mat ess = findEssentialMat(_cpt0, _cpt1, cam, LMEDS, 0.99, 0.01, mask_ess);
+            //Mat ess = findEssentialMat(_cpt0, _cpt1, cam, LMEDS, 0.99, 0.01, mask_ess);
+            Mat ess = findEssentialMat(_cpt0, _cpt1, cam, RANSAC, 0.95, 0.01, mask_ess);
 
             vector<Point2f> cpt0, cpt1;
             for(int k = 0; k < mask_ess.size(); k++){
@@ -171,6 +217,179 @@ int robust_ass(const vector<pair<int, int> > window,
 }
 
 
+int really_robust_ass(const vector<pair<int, int> > window,
+                      const int stride,
+                      const int num_frames,
+                      const vector<vector<Point2f> > &source_kp,
+                      const vector<string> &img_fns,
+                      const vector<Mat> &descs,
+                      const Mat cam,
+                      map<pair<int, int>, reproj> &reprojs){
+    assert(stride > 0);
+
+    vector<uchar> status;
+    vector<float> err;
+
+    Mat src, tgt;
+    int i0, i1;
+    string src_fn, tgt_fn;
+
+    //FlannBasedMatcher matcher;
+    BFMatcher matcher(NORM_HAMMING2, true); // , true
+
+    for(int i = 0; i < num_frames; i += stride){
+        for(int j = 0; j < window.size(); j++){
+            i0 = i + window[j].first;
+            i1 = i + window[j].second;
+
+            if(reprojs.find(make_pair(i0, i1)) != reprojs.end()){
+                continue;
+            }
+
+            if(max(i0, i1) >= num_frames){
+                break;
+            }
+
+            while(source_kp.size() < max(i0, i1) + 1){
+                this_thread::sleep_for(chrono::milliseconds(10));
+            }
+
+            src_fn = img_fns[i0];
+            tgt_fn = img_fns[i1];
+
+            src = imread(src_fn, IMREAD_GRAYSCALE);
+            tgt = imread(tgt_fn, IMREAD_GRAYSCALE);
+
+            vector<Point2f> pt0, pt1;
+            vector<Point2f> _cpt0, _cpt1;
+
+            Mat desc0, desc1;
+            desc0 = descs[i0];
+            desc1 = descs[i1];
+
+            //cout << source_kp[i0].size() << " "
+            //     << source_kp[i1].size() << " "
+            //     << desc0.size() << " "
+            //     << desc1.size() << endl << endl;
+
+            //-- Step 3: Matching descriptor vectors using FLANN matcher
+            vector<DMatch> matches;
+            matcher.match(desc0, desc1, matches);
+
+            //cout << "matches " << matches.size() << endl << endl;
+
+            //-- Quick calculation of max and min distances between keypoints
+            //double max_dist = 0;
+            //double min_dist = 100;
+            //for(int k = 0; k < matches.size(); k++){
+            //    double dist = matches[k].distance;
+            //    if( dist < min_dist ) min_dist = dist;
+            //    if( dist > max_dist ) max_dist = dist;
+            //}
+
+            //cout << "dists " << min_dist << " " << max_dist << endl << endl;
+
+            //vector<DMatch> good_matches;
+            //for(int k = 0; k < matches.size(); k++){
+            //    if(matches[k].distance <= max((min_dist + max_dist) / 3, 0.02)){
+            //        good_matches.push_back(matches[k]);
+            //    }
+            //}
+            vector<DMatch> good_matches = matches;
+
+            //cout << "good matches " << good_matches.size() << endl << endl;
+
+            pt0 = source_kp[i0];
+            pt1 = source_kp[i1];
+
+            vector<KeyPoint> kp0, kp1;
+
+            for(int k = 0; k < pt0.size(); k++){
+                kp0.push_back(KeyPoint(pt0[k], 1.0f));
+            }
+
+            for(int k = 0; k < pt1.size(); k++){
+                kp1.push_back(KeyPoint(pt1[k], 1.0f));
+            }
+
+            //Mat drawn_matches;
+            //drawMatches(src, kp0, tgt, kp1, good_matches, drawn_matches);
+            //imshow("Matches", drawn_matches);
+            //waitKey(0);
+
+            int id0, id1;
+            for(int k = 0; k < good_matches.size(); k++){
+                id0 = good_matches[k].queryIdx;
+                id1 = good_matches[k].trainIdx;
+
+                //cout << "id " << id0 << " " << id1 << " " << pt0.size() << endl;
+
+                _cpt0.push_back(pt0[id0]);
+                _cpt1.push_back(pt1[id1]);
+            }
+
+            vector<uchar> mask_ess;
+            vector<Point2f> cpt0, cpt1;
+            Mat rot, tr;
+            vector<uchar> rec_mask;
+            MatrixXd erot(3, 3), etr(3, 1);
+            vector<Point2f> fpt0, fpt1;
+            if(_cpt0.size() >= 8){
+                Mat ess = findEssentialMat(_cpt0, _cpt1, cam, LMEDS, 0.99, 0.1, mask_ess);
+                //Mat ess = findEssentialMat(_cpt0, _cpt1, cam, RANSAC, 0.99, 0.1, mask_ess);
+
+                for(int k = 0; k < mask_ess.size(); k++){
+                    if((int)mask_ess[k] == 1){
+                        cpt0.push_back(_cpt0[k]);
+                        cpt1.push_back(_cpt1[k]);
+                    }
+                }
+
+                //cout << "cpt0 " << cpt0.size() << endl << endl;
+
+                // Initialize
+                recoverPose(ess, cpt0, cpt1, cam, rot, tr, rec_mask);
+
+                cv2eigen(rot, erot);
+                cv2eigen(tr, etr);
+
+                // if(erot.trace() < 3.0 * 0.9){
+                //     erot = MatrixXd::Identity(3, 3);
+                //     etr << 0.1, 0.1, -0.9;
+                // }
+
+                // if(etr.norm() < 1E-5){
+                //     etr << 0.1, 0.1, -0.9;
+                // }
+
+                for(int k = 0; k < rec_mask.size(); k++){
+                    //cout << (int)rec_mask[k] << " ";
+                    if((int)rec_mask[k] == 255){
+                        fpt0.push_back(cpt0[k]);
+                        fpt1.push_back(cpt1[k]);
+                    }
+                }
+
+                //cout << erot << endl << endl;
+                //cout << etr << endl << endl;
+                //cout << fpt0.size() << endl << endl;
+
+            } else {
+                erot = MatrixXd::Identity(3, 3);
+                etr << 0.1, 0.1, -0.9;
+            }
+
+            reproj rep;
+            rep.p0 = fpt0;
+            rep.p1 = fpt1;
+            rep.R = erot;
+            rep.t = etr;
+            reprojs.insert(make_pair(make_pair(i0, i1), rep));
+        }
+    }
+}
+
+
 int bundle_adjustment(map<pair<int, int>, reproj> &reprojs,
                       const vector<pair<int, int> > window,
                       const int stride,
@@ -191,7 +410,7 @@ int bundle_adjustment(map<pair<int, int>, reproj> &reprojs,
     cam_ = cam_.inverse();
 
     int i0, i1, w0, w1, N;
-    const int min_pt = 48;
+    const int min_pt = 12;
     bool _exit = false;
     for(int i = 0; i < num_frames; i += stride){
         cout << i << endl;
@@ -288,9 +507,10 @@ int bundle_adjustment(map<pair<int, int>, reproj> &reprojs,
              << lm_res.lambda << endl << endl;
         
         //uncert = lm_res.lambda;
-        uncert = lm_res.r_norm;
+        //uncert = lm_res.r_norm;
+        // || lm_res.H_norm > 1e-2
 
-        if(uncert > 1e-5){
+        if(lm_res.r_norm > 1e-7){
            T0s = bT0s;
         }
 
@@ -326,14 +546,21 @@ int main(){
     vector<vector<Point2f> > key_points;
     vector<string> img_fns;
 
+    vector<Mat> descs;
     thread kp_extractor(extract_kp,
                         base_img,
                         num_frames,
                         ref(key_points),
                         ref(img_fns));
+    // thread kp_extractor(extract_good_kp,
+    //                     base_img,
+    //                     num_frames,
+    //                     ref(key_points),
+    //                     ref(img_fns),
+    //                     ref(descs));
     
     vector<pair<int, int> > window;
-    int ws = 5;
+    int ws = 20;
     for(int i = 0; i < ws - 1; i++){
         window.push_back(make_pair(i, i + 1));
         //if(i > 0){
@@ -348,6 +575,8 @@ int main(){
 
     thread match_kp(robust_ass, window, stride, num_frames,
                     ref(key_points), ref(img_fns), cam, ref(reprojs));
+    //thread match_kp(really_robust_ass, window, stride, num_frames,
+    //                ref(key_points), ref(img_fns), ref(descs), cam, ref(reprojs));
     
     vector<MatrixXd> opt_T;
     thread ba_lm(bundle_adjustment, ref(reprojs), window,
@@ -367,8 +596,9 @@ int main(){
 
     MatrixXd acc_T = MatrixXd::Identity(4, 4);
     double scale = 1.0;
+    double tnorm = 1.0;
     for(int i = 0; i < opt_T.size(); i++){
-        if(i % (ws - 1)  == 0){
+        if(i % (ws - 1) == 0 || true){
             MatrixXd T = MatrixXd::Identity(4, 4);
             MatrixXd pT = MatrixXd::Identity(4, 4);
 
@@ -384,15 +614,12 @@ int main(){
             MatrixXd dT = pT.inverse() * T;
 
             scale = dT.block<3, 1>(0, 3).norm();
+            tnorm = opt_T[i].block<3, 1>(0, 3).norm();
         }
 
         poses_ba << acc_T << "\n\n";
 
-        double tnorm = opt_T[i].block<3, 1>(0, 3).norm();
-
-        if(tnorm == 0.0){
-            opt_T[i].block<3, 1>(0, 3) *= scale;
-        } else {
+        if(tnorm != 0.0){
             opt_T[i].block<3, 1>(0, 3) *= scale / tnorm;
         }
 
