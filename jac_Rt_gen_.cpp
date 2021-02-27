@@ -284,15 +284,16 @@ void RepJacobian::compute(const MatrixXd &p,
 }
 
 
-double Levenberg_Marquardt(const int n_zeta,
-                           const double epsilon,
-                           const vector<pair<int, int> > &reps,
-                           const vector<double> &wreps,
-                           const double lambda0,
-                           vector<MatrixXd> &T0s,
-                           vector<MatrixXd> &pr,
-                           vector<MatrixXd> &p_r
-                           ){
+int Levenberg_Marquardt(const int n_zeta,
+                        const double epsilon,
+                        const vector<pair<int, int> > &reps,
+                        const vector<double> &wreps,
+                        const double lambda0,
+                        vector<MatrixXd> &T0s,
+                        vector<MatrixXd> &pr,
+                        vector<MatrixXd> &p_r,
+                        LM_res &lm_res
+                        ){
     assert(reps.size() == wreps.size());
     // srand(time(0));
     const int N = pr[0].rows(); // Number of points of each reprojection
@@ -467,7 +468,12 @@ double Levenberg_Marquardt(const int n_zeta,
 
     //return H.norm();
     //return r0.norm();
-    return lambda;
+    //return lambda;
+    lm_res.H_norm = H.norm();
+    lm_res.r_norm = r0.norm();
+    lm_res.lambda = lambda;
+
+    return 0;
 }
 
 

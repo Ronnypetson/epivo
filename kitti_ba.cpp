@@ -279,10 +279,18 @@ int bundle_adjustment(map<pair<int, int>, reproj> &reprojs,
 
         double uncert;
         int nzeta = w1 - w0;
+        LM_res lm_res;
 
-        uncert = Levenberg_Marquardt(nzeta, 1e-8, reps, wreps, 1e-2, T0s, pr, p_r);
-        cout << uncert << endl << endl;
-        if(uncert > 1e-9){
+        Levenberg_Marquardt(nzeta, 1e-8, reps, wreps, 1e-2, T0s, pr, p_r, lm_res);
+
+        cout << lm_res.H_norm << endl
+             << lm_res.r_norm << endl
+             << lm_res.lambda << endl << endl;
+        
+        //uncert = lm_res.lambda;
+        uncert = lm_res.r_norm;
+
+        if(uncert > 1e-5){
            T0s = bT0s;
         }
 
@@ -343,7 +351,7 @@ int main(){
     
     vector<MatrixXd> opt_T;
     thread ba_lm(bundle_adjustment, ref(reprojs), window,
-                 ws - 2, num_frames, cam, ref(opt_T));
+                 ws - 1, num_frames, cam, ref(opt_T));
 
     kp_extractor.join();
     match_kp.join();
@@ -358,10 +366,40 @@ int main(){
     poses_ba.open("kitti.T");
 
     MatrixXd acc_T = MatrixXd::Identity(4, 4);
+    double scale = 1.0;
     for(int i = 0; i < opt_T.size(); i++){
+        if(i % (ws - 1)  == 0){
+            MatrixXd T = MatrixXd::Identity(4, 4);
+            MatrixXd pT = MatrixXd::Identity(4, 4);
+
+            MatrixXd _pT = poses.row(i);
+            MatrixXd _T = poses.row(i + 1);
+
+            _pT.resize(4, 3);
+            _T.resize(4, 3);
+
+            T.block<3, 4>(0, 0) = _T.transpose();
+            pT.block<3, 4>(0, 0) = _pT.transpose();
+
+            MatrixXd dT = pT.inverse() * T;
+
+            scale = dT.block<3, 1>(0, 3).norm();
+        }
+
         poses_ba << acc_T << "\n\n";
+
+        double tnorm = opt_T[i].block<3, 1>(0, 3).norm();
+
+        if(tnorm == 0.0){
+            opt_T[i].block<3, 1>(0, 3) *= scale;
+        } else {
+            opt_T[i].block<3, 1>(0, 3) *= scale / tnorm;
+        }
+
         acc_T = acc_T * opt_T[i].inverse();
-        cout << opt_T[i] << endl << endl;
+        //cout << opt_T[i] << endl << endl;
+
+        cout << i << " " << scale / tnorm << endl << endl;
     }
 
     poses_ba.close();
