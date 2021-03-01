@@ -410,7 +410,7 @@ int bundle_adjustment(map<pair<int, int>, reproj> &reprojs,
     cam_ = cam_.inverse();
 
     int i0, i1, w0, w1, N;
-    const int min_pt = 12;
+    const int min_pt = 32;
     bool _exit = false;
     for(int i = 0; i < num_frames; i += stride){
         cout << i << endl;
@@ -444,12 +444,18 @@ int bundle_adjustment(map<pair<int, int>, reproj> &reprojs,
         for(int j = 0; j < window.size(); j++){
             i0 = i + window[j].first;
             i1 = i + window[j].second;
-            reps.push_back(make_pair(window[j].first, window[j].second - 1));
+
+            assert(i1 != i0);
+            if(i1 > i0){
+                reps.push_back(make_pair(window[j].first, window[j].second - 1));
+            } else {
+                reps.push_back(make_pair(window[j].first - 1, window[j].second));
+            }
 
             reproj r = reprojs[make_pair(i0, i1)];
             N = min(min_pt, (int)r.p0.size());
             if(N < min_pt){
-                //cout << "Bad pts" << endl << endl;
+                cout << "Bad pts" << endl << endl;
                 wreps.push_back(0.0);
                 pr.push_back(MatrixXd::Ones(min_pt, 3));
                 p_r.push_back(MatrixXd::Ones(min_pt, 3));
@@ -500,6 +506,7 @@ int bundle_adjustment(map<pair<int, int>, reproj> &reprojs,
         int nzeta = w1 - w0;
         LM_res lm_res;
 
+        wreps[0] = 0.0;
         Levenberg_Marquardt(nzeta, 1e-8, reps, wreps, 1e-2, T0s, pr, p_r, lm_res);
 
         cout << lm_res.H_norm << endl
@@ -510,7 +517,7 @@ int bundle_adjustment(map<pair<int, int>, reproj> &reprojs,
         //uncert = lm_res.r_norm;
         // || lm_res.H_norm > 1e-2
 
-        if(lm_res.r_norm > 1e-7){
+        if(lm_res.r_norm > 1e-2){
            T0s = bT0s;
         }
 
@@ -561,12 +568,14 @@ int main(){
     
     vector<pair<int, int> > window;
     int ws = 20;
+    int stridew = ws - 2;
     for(int i = 0; i < ws - 1; i++){
         window.push_back(make_pair(i, i + 1));
         //if(i > 0){
-        //    window.push_back(make_pair(0, i + 1));
+        //    window.push_back(make_pair(i + 1, 0));
         //}
         if(i < ws - 2){
+            //window.push_back(make_pair(i + 2, i));
             window.push_back(make_pair(i, i + 2));
         }
     }
@@ -580,7 +589,7 @@ int main(){
     
     vector<MatrixXd> opt_T;
     thread ba_lm(bundle_adjustment, ref(reprojs), window,
-                 ws - 1, num_frames, cam, ref(opt_T));
+                 stridew, num_frames, cam, ref(opt_T));
 
     kp_extractor.join();
     match_kp.join();
@@ -591,45 +600,56 @@ int main(){
     cout << reprojs.size() << endl << endl;
     //cout << opt_T[95] << endl << endl;
 
-    ofstream poses_ba;
+    ofstream poses_ba, poses_gt_;
     poses_ba.open("kitti.T");
+    poses_gt_.open("kitti.GT");
 
     MatrixXd acc_T = MatrixXd::Identity(4, 4);
+    MatrixXd sacc_T = MatrixXd::Identity(4, 4);
     double scale = 1.0;
     double tnorm = 1.0;
     for(int i = 0; i < opt_T.size(); i++){
-        if(i % (ws - 1) == 0 || true){
-            MatrixXd T = MatrixXd::Identity(4, 4);
-            MatrixXd pT = MatrixXd::Identity(4, 4);
+        MatrixXd T = MatrixXd::Identity(4, 4);
+        MatrixXd pT = MatrixXd::Identity(4, 4);
 
-            MatrixXd _pT = poses.row(i);
-            MatrixXd _T = poses.row(i + 1);
+        MatrixXd _pT = poses.row(i);
+        MatrixXd _T = poses.row(i + 1);
 
-            _pT.resize(4, 3);
-            _T.resize(4, 3);
+        _pT.resize(4, 3);
+        _T.resize(4, 3);
 
-            T.block<3, 4>(0, 0) = _T.transpose();
-            pT.block<3, 4>(0, 0) = _pT.transpose();
+        T.block<3, 4>(0, 0) = _T.transpose();
+        pT.block<3, 4>(0, 0) = _pT.transpose();
+        poses_gt_ << pT << "\n\n";
 
-            MatrixXd dT = pT.inverse() * T;
+        MatrixXd dT = pT.inverse() * T;
 
+        if(i == 0){ // i % stridew == 0
             scale = dT.block<3, 1>(0, 3).norm();
             tnorm = opt_T[i].block<3, 1>(0, 3).norm();
         }
 
-        poses_ba << acc_T << "\n\n";
+        sacc_T = acc_T;
+        sacc_T.block<3, 1>(0, 3) *= scale / tnorm;
+        poses_ba << sacc_T << "\n\n";
 
-        if(tnorm != 0.0){
-            opt_T[i].block<3, 1>(0, 3) *= scale / tnorm;
-        }
+        cout << i << " "
+             << opt_T[i].block<3, 1>(0, 3).norm() << " "
+             << dT.block<3, 1>(0, 3).norm() << " "
+             << dT.block<3, 1>(0, 3).norm() / opt_T[i].block<3, 1>(0, 3).norm() << endl;
+
+        //if(tnorm != 0.0){
+        //    opt_T[i].block<3, 1>(0, 3) *= scale / tnorm;
+        //}
 
         acc_T = acc_T * opt_T[i].inverse();
         //cout << opt_T[i] << endl << endl;
 
-        cout << i << " " << scale / tnorm << endl << endl;
+        cout << scale / tnorm << endl << endl;
     }
 
     poses_ba.close();
+    poses_gt_.close();
 
     exit(0);
 
