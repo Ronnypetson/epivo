@@ -456,7 +456,8 @@ int bundle_adjustment(map<pair<int, int>, reproj> &reprojs,
             N = min(min_pt, (int)r.p0.size());
             if(N < min_pt){
                 cout << "Bad pts" << endl << endl;
-                wreps.push_back(0.0);
+                //wreps.push_back(0.0);
+                wreps.push_back(1.0);
                 pr.push_back(MatrixXd::Ones(min_pt, 3));
                 p_r.push_back(MatrixXd::Ones(min_pt, 3));
             } else {
@@ -506,7 +507,8 @@ int bundle_adjustment(map<pair<int, int>, reproj> &reprojs,
         int nzeta = w1 - w0;
         LM_res lm_res;
 
-        wreps[0] = 0.0;
+        wreps[0] = 0.0; //0.0;
+        wreps[1] = 0.0;
         Levenberg_Marquardt(nzeta, 1e-8, reps, wreps, 1e-2, T0s, pr, p_r, lm_res);
 
         cout << lm_res.H_norm << endl
@@ -548,7 +550,7 @@ int main(){
     vector<MatrixXd> all_T, all_GT;
     MatrixXd cT = MatrixXd::Identity(4, 4);
 
-    const int num_frames = 200;
+    const int num_frames = 400;
     const int stride = 1;
     vector<vector<Point2f> > key_points;
     vector<string> img_fns;
@@ -567,8 +569,8 @@ int main(){
     //                     ref(descs));
     
     vector<pair<int, int> > window;
-    int ws = 20;
-    int stridew = ws - 2;
+    int ws = 10;
+    int stridew = ws - 3; // ws - 2
     for(int i = 0; i < ws - 1; i++){
         window.push_back(make_pair(i, i + 1));
         //if(i > 0){

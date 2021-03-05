@@ -14,7 +14,7 @@ using namespace std;
 using namespace Eigen;
 
 
-const double huber_delta = 1E0;
+const double huber_delta = 1E-5;
 const int rep_max = 128;
 //map<pair<int, int>, MatrixXd> T_mem;
 MatrixXd T0_mem[rep_max][rep_max];
