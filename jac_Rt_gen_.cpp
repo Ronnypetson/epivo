@@ -405,6 +405,7 @@ int Levenberg_Marquardt(const int n_zeta,
         delta = -H.inverse() * b;
 
         if(delta.hasNaN()){
+            cout << "delta has Nan" << endl;
             break;
         }
 

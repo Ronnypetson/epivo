@@ -169,8 +169,8 @@ int robust_ass(const vector<pair<int, int> > window,
             }
 
             vector<uchar> mask_ess;
-            //Mat ess = findEssentialMat(_cpt0, _cpt1, cam, LMEDS, 0.99, 0.01, mask_ess);
-            Mat ess = findEssentialMat(_cpt0, _cpt1, cam, RANSAC, 0.95, 0.01, mask_ess);
+            //Mat ess = findEssentialMat(_cpt0, _cpt1, cam, LMEDS, 0.99, 0.1, mask_ess);
+            Mat ess = findEssentialMat(_cpt0, _cpt1, cam, RANSAC, 0.95, 0.05, mask_ess);
 
             vector<Point2f> cpt0, cpt1;
             for(int k = 0; k < mask_ess.size(); k++){
@@ -199,8 +199,18 @@ int robust_ass(const vector<pair<int, int> > window,
             }
 
             vector<Point2f> fpt0, fpt1;
+            double dx, dy, mag;
             for(int k = 0; k < rec_mask.size(); k++){
                 if((int)rec_mask[k] == 255){
+                    //dx = cpt0[k].x - cpt1[k].x;
+                    //dy = cpt0[k].y - cpt1[k].y;
+                    //mag = dx * dx + dy * dy;
+
+                    //if(mag > 20.0){
+                    //    fpt0.push_back(cpt0[k]);
+                    //    fpt1.push_back(cpt1[k]);
+                    //}
+
                     fpt0.push_back(cpt0[k]);
                     fpt1.push_back(cpt1[k]);
                 }
@@ -454,10 +464,10 @@ int bundle_adjustment(map<pair<int, int>, reproj> &reprojs,
 
             reproj r = reprojs[make_pair(i0, i1)];
             N = min(min_pt, (int)r.p0.size());
-            if(N < min_pt){
+            if(N < min_pt){ // && false
                 cout << "Bad pts" << endl << endl;
-                //wreps.push_back(0.0);
-                wreps.push_back(1.0);
+                wreps.push_back(0.0);
+                //wreps.push_back(1.0);
                 pr.push_back(MatrixXd::Ones(min_pt, 3));
                 p_r.push_back(MatrixXd::Ones(min_pt, 3));
             } else {
@@ -483,20 +493,21 @@ int bundle_adjustment(map<pair<int, int>, reproj> &reprojs,
         }
 
         vector<MatrixXd> T0s;
-        double scale = 1.0;
+        double scale = 1.0, tscale = 1.0;
         if(optimized[w0]){
             scale = opt_T[w0].block<3, 1>(0, 3).norm();
         }
         for(int j = w0; j < w1; j++){
             MatrixXd T0_0 = MatrixXd::Identity(4, 4);
-            if(!optimized[j]){
+            if(!optimized[j] || true){
                 reproj r = reprojs[make_pair(j, j + 1)];
                 T0_0.block<3, 3>(0, 0) = r.R;
                 T0_0.block<3, 1>(0, 3) = r.t;
             } else {
                 //T0_0 = opt_T[j];
                 T0_0.block<3, 3>(0, 0) = opt_T[j].block<3, 3>(0, 0);
-                T0_0.block<3, 1>(0, 3) = opt_T[j].block<3, 1>(0, 3) / scale;
+                tscale = opt_T[j].block<3, 1>(0, 3).norm();
+                T0_0.block<3, 1>(0, 3) = opt_T[j].block<3, 1>(0, 3) / tscale;
             }
             T0s.push_back(T0_0);
         }
@@ -507,8 +518,8 @@ int bundle_adjustment(map<pair<int, int>, reproj> &reprojs,
         int nzeta = w1 - w0;
         LM_res lm_res;
 
-        wreps[0] = 0.0; //0.0;
-        wreps[1] = 0.0;
+        //wreps[0] = 0.0; //0.0;
+        //wreps[1] = 0.0;
         Levenberg_Marquardt(nzeta, 1e-8, reps, wreps, 1e-2, T0s, pr, p_r, lm_res);
 
         cout << lm_res.H_norm << endl
@@ -523,9 +534,12 @@ int bundle_adjustment(map<pair<int, int>, reproj> &reprojs,
            T0s = bT0s;
         }
 
+        double tnorm = 1.0;
+        tnorm = T0s[0].block<3, 1>(0, 3).norm();
         for(int j = w0; j < w1; j++){
             opt_T[j] = T0s[j - w0];
-            opt_T[j].block<3, 1>(0, 3) *= scale;
+            //opt_T[j].block<3, 1>(0, 3) *= scale / tnorm;
+            opt_T[j].block<3, 1>(0, 3) /= scale;
             optimized[j] = true;
         }
     }
@@ -541,16 +555,16 @@ int main(){
             0.0,      718.8560, 185.2157,
             0.0,      0.0,      1.0;
     cam_ = cam_.inverse();
-    MatrixXd poses = load_csv<MatrixXd>("/home/ronnypetson/dataset/poses/00.txt");
+    MatrixXd poses = load_csv<MatrixXd>("/home/ronnypetson/dataset/poses/01.txt");
     vector<MatrixXd> X;
     vector<int> limits;
     string src_fn, tgt_fn;
-    const string base_img = "/home/ronnypetson/dataset/sequences/00/image_0/";
+    const string base_img = "/home/ronnypetson/dataset/sequences/01/image_0/";
 
     vector<MatrixXd> all_T, all_GT;
     MatrixXd cT = MatrixXd::Identity(4, 4);
 
-    const int num_frames = 400;
+    const int num_frames = 20;
     const int stride = 1;
     vector<vector<Point2f> > key_points;
     vector<string> img_fns;
@@ -569,17 +583,21 @@ int main(){
     //                     ref(descs));
     
     vector<pair<int, int> > window;
-    int ws = 10;
-    int stridew = ws - 3; // ws - 2
+    int ws = 5;
+    int stridew = ws - 1; // ws - 2
     for(int i = 0; i < ws - 1; i++){
         window.push_back(make_pair(i, i + 1));
         //if(i > 0){
         //    window.push_back(make_pair(i + 1, 0));
         //}
-        if(i < ws - 2){
+        if(i < ws - 4){
             //window.push_back(make_pair(i + 2, i));
-            window.push_back(make_pair(i, i + 2));
+            window.push_back(make_pair(i, i + 4));
         }
+        //if(i < ws - 3){
+        //    //window.push_back(make_pair(i + 2, i));
+        //    window.push_back(make_pair(i, i + 3));
+        //}
     }
 
     map<pair<int, int>, reproj> reprojs;
@@ -626,14 +644,19 @@ int main(){
 
         MatrixXd dT = pT.inverse() * T;
 
-        if(i == 0){ // i % stridew == 0
+        if(i % stridew == 0){ // // i == 0
             scale = dT.block<3, 1>(0, 3).norm();
             tnorm = opt_T[i].block<3, 1>(0, 3).norm();
         }
 
-        sacc_T = acc_T;
-        sacc_T.block<3, 1>(0, 3) *= scale / tnorm;
-        poses_ba << sacc_T << "\n\n";
+        poses_ba << acc_T << "\n\n";
+
+        opt_T[i].block<3, 1>(0, 3) *= scale / tnorm;
+        acc_T = acc_T * opt_T[i].inverse();
+
+        //sacc_T = acc_T;
+        //sacc_T.block<3, 1>(0, 3) *= scale / tnorm;
+        //poses_ba << sacc_T << "\n\n";
 
         cout << i << " "
              << opt_T[i].block<3, 1>(0, 3).norm() << " "
@@ -644,7 +667,7 @@ int main(){
         //    opt_T[i].block<3, 1>(0, 3) *= scale / tnorm;
         //}
 
-        acc_T = acc_T * opt_T[i].inverse();
+        //acc_T = acc_T * opt_T[i].inverse();
         //cout << opt_T[i] << endl << endl;
 
         cout << scale / tnorm << endl << endl;
