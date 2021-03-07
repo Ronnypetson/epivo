@@ -465,11 +465,14 @@ int bundle_adjustment(map<pair<int, int>, reproj> &reprojs,
             reproj r = reprojs[make_pair(i0, i1)];
             N = min(min_pt, (int)r.p0.size());
             if(N < min_pt){ // && false
+                //continue;
                 cout << "Bad pts" << endl << endl;
                 wreps.push_back(0.0);
-                //wreps.push_back(1.0);
                 pr.push_back(MatrixXd::Ones(min_pt, 3));
                 p_r.push_back(MatrixXd::Ones(min_pt, 3));
+            } else if(false && 3.0 - r.R.trace() < 0.007 && abs(i0 - i1) > 1){
+                //cout << r.R.trace() << " ";
+                continue;
             } else {
                 if(i1 - i0 == 1 && optimized[i0]){
                     //cout << "Freezing pose" << endl << endl;
@@ -520,7 +523,9 @@ int bundle_adjustment(map<pair<int, int>, reproj> &reprojs,
 
         //wreps[0] = 0.0; //0.0;
         //wreps[1] = 0.0;
-        Levenberg_Marquardt(nzeta, 1e-8, reps, wreps, 1e-2, T0s, pr, p_r, lm_res);
+        if(reps.size() > 0){
+            Levenberg_Marquardt(nzeta, 1e-8, reps, wreps, 1e-2, T0s, pr, p_r, lm_res);
+        }
 
         cout << lm_res.H_norm << endl
              << lm_res.r_norm << endl
@@ -555,16 +560,16 @@ int main(){
             0.0,      718.8560, 185.2157,
             0.0,      0.0,      1.0;
     cam_ = cam_.inverse();
-    MatrixXd poses = load_csv<MatrixXd>("/home/ronnypetson/dataset/poses/01.txt");
+    MatrixXd poses = load_csv<MatrixXd>("/home/ronnypetson/dataset/poses/09.txt");
     vector<MatrixXd> X;
     vector<int> limits;
     string src_fn, tgt_fn;
-    const string base_img = "/home/ronnypetson/dataset/sequences/01/image_0/";
+    const string base_img = "/home/ronnypetson/dataset/sequences/09/image_0/";
 
     vector<MatrixXd> all_T, all_GT;
     MatrixXd cT = MatrixXd::Identity(4, 4);
 
-    const int num_frames = 20;
+    const int num_frames = 400;
     const int stride = 1;
     vector<vector<Point2f> > key_points;
     vector<string> img_fns;
@@ -583,16 +588,16 @@ int main(){
     //                     ref(descs));
     
     vector<pair<int, int> > window;
-    int ws = 5;
+    int ws = 3;
     int stridew = ws - 1; // ws - 2
     for(int i = 0; i < ws - 1; i++){
         window.push_back(make_pair(i, i + 1));
         //if(i > 0){
         //    window.push_back(make_pair(i + 1, 0));
         //}
-        if(i < ws - 4){
+        if(i < ws - 2){
             //window.push_back(make_pair(i + 2, i));
-            window.push_back(make_pair(i, i + 4));
+            window.push_back(make_pair(i, i + 2));
         }
         //if(i < ws - 3){
         //    //window.push_back(make_pair(i + 2, i));
