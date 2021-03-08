@@ -65,6 +65,52 @@ int extract_kp(const string base_img,
 }
 
 
+int extract_kp_stereo(const string base_img_L,
+                      const string base_img_R,
+                      const int num_frames,
+                      vector<vector<Point2f> > &key_points_L,
+                      vector<vector<Point2f> > &key_points_R,
+                      vector<string> &img_fns_L,
+                      vector<string> &img_fns_R){
+    assert(key_points_L.size() == 0);
+    assert(key_points_R.size() == 0);
+    assert(img_fns_L.size() == 0);
+    assert(img_fns_R.size() == 0);
+
+    Mat src_L, src_R;
+    Ptr<FastFeatureDetector> detector = FastFeatureDetector::create(40);
+    for(int i = 0; i < num_frames; i++){
+        string src_fn_L, src_fn_R;
+        src_fn_L = base_img_L;
+        src_fn_R = base_img_R;
+
+        stringstream ss0_L, ss0_R;
+        ss0_L << setw(6) << setfill('0') << i;
+        src_fn_L += ss0_L.str() + ".png";
+
+        ss0_R << setw(6) << setfill('0') << i;
+        src_fn_R += ss0_R.str() + ".png";
+
+        src_L = imread(src_fn_L, IMREAD_GRAYSCALE);
+        src_R = imread(src_fn_R, IMREAD_GRAYSCALE);
+
+        vector<KeyPoint> kp0_L, kp0_R;
+        detector->detect(src_L, kp0_L, Mat());
+        detector->detect(src_R, kp0_R, Mat());
+
+        vector<Point2f> pt0_L, pt0_R;
+        cv::KeyPoint::convert(kp0_L, pt0_L);
+        cv::KeyPoint::convert(kp0_R, pt0_R);
+
+        key_points_L.push_back(pt0_L);
+        key_points_R.push_back(pt0_R);
+
+        img_fns_L.push_back(src_fn_L);
+        img_fns_R.push_back(src_fn_R);
+    }
+}
+
+
 int extract_good_kp(const string base_img,
                     const int num_frames,
                     vector<vector<Point2f> > &key_points,
@@ -202,15 +248,6 @@ int robust_ass(const vector<pair<int, int> > window,
             double dx, dy, mag;
             for(int k = 0; k < rec_mask.size(); k++){
                 if((int)rec_mask[k] == 255){
-                    //dx = cpt0[k].x - cpt1[k].x;
-                    //dy = cpt0[k].y - cpt1[k].y;
-                    //mag = dx * dx + dy * dy;
-
-                    //if(mag > 20.0){
-                    //    fpt0.push_back(cpt0[k]);
-                    //    fpt1.push_back(cpt1[k]);
-                    //}
-
                     fpt0.push_back(cpt0[k]);
                     fpt1.push_back(cpt1[k]);
                 }
@@ -221,6 +258,157 @@ int robust_ass(const vector<pair<int, int> > window,
             rep.p1 = fpt1;
             rep.R = erot;
             rep.t = etr;
+            reprojs.insert(make_pair(make_pair(i0, i1), rep));
+        }
+    }
+}
+
+
+int robust_ass_stereo(const vector<pair<int, int> > window,
+                      const int stride,
+                      const int num_frames,
+                      const vector<vector<Point2f> > &source_kp_L,
+                      const vector<vector<Point2f> > &source_kp_R,
+                      const vector<string> &img_fns_L,
+                      const vector<string> &img_fns_R,
+                      const Mat cam_L,
+                      const Mat cam_R,
+                      map<pair<int, int>, reproj> &reprojs){
+    assert(stride > 0);
+    assert(reprojs.size() == 0);
+
+    vector<uchar> status_L, status_R;
+    vector<float> err_L, err_R;
+
+    Mat src_L, tgt_L;
+    Mat src_R, tgt_R;
+    int i0, i1;
+    string src_fn_L, tgt_fn_L;
+    string src_fn_R, tgt_fn_R;
+
+    Ptr<StereoBM> stereo = StereoBM::create(96, 15);
+    Ptr<StereoSGBM> sgbm = StereoSGBM::create(-3,    //int minDisparity
+                                            96,     //int numDisparities
+                                            7,      //int SADWindowSize
+                                            60,    //int P1 = 0
+                                            2400,   //int P2 = 0
+                                            90,     //int disp12MaxDiff = 0
+                                            16,     //int preFilterCap = 0
+                                            1,      //int uniquenessRatio = 0
+                                            60,    //int speckleWindowSize = 0
+                                            20,     //int speckleRange = 0
+                                            true);  //bool fullDP = false
+
+    for(int i = 0; i < num_frames; i += stride){
+        for(int j = 0; j < window.size(); j++){
+            i0 = i + window[j].first;
+            i1 = i + window[j].second;
+
+            if(reprojs.find(make_pair(i0, i1)) != reprojs.end()){
+                continue;
+            }
+
+            if(max(i0, i1) >= num_frames){
+                break;
+            }
+
+            while(source_kp_L.size() < max(i0, i1) + 1){
+                this_thread::sleep_for(chrono::milliseconds(10));
+            }
+
+            src_fn_L = img_fns_L[i0];
+            tgt_fn_L = img_fns_L[i1];
+
+            src_fn_R = img_fns_R[i0];
+
+            //cout << src_fn_L << endl;
+            //cout << src_fn_R << endl;
+
+            src_L = imread(src_fn_L, IMREAD_GRAYSCALE);
+            tgt_L = imread(tgt_fn_L, IMREAD_GRAYSCALE);
+
+            src_R = imread(src_fn_R, IMREAD_GRAYSCALE);
+
+            vector<Point2f> pt0_L, pt0_R, pt1_L;
+
+            Mat disp, norm_disp;
+            //stereo->compute(src_L, src_R, disp);
+            sgbm->compute(src_L, src_R, disp);
+            
+            normalize(disp, norm_disp, 0.0, 1.0, NORM_MINMAX, CV_32F);
+
+            //cout << disp.rows << " " << disp.cols << endl;
+            
+            pt0_L = source_kp_L[i0];
+
+            calcOpticalFlowPyrLK(src_L, src_R, pt0_L, pt0_R, status_L, err_L);
+
+            //imshow("Left", src_L);
+            //imshow("Disparity", norm_disp);
+            //waitKey(0);
+            for(int i = 0; i < pt0_L.size(); i++){
+                cout << pt0_L[i].x - pt0_R[i].x << " " << pt0_L[i].y - pt0_R[i].y << endl;
+                cout << pt0_L[i].x << " " <<
+                    disp.at<short>(pt0_L[i].y, pt0_L[i].x) / 16.0 << endl;
+                cout << endl;
+            }
+
+            calcOpticalFlowPyrLK(src_L, tgt_L, pt0_L, pt1_L, status_L, err_L);
+
+            vector<Point2f> _cpt0_L, _cpt1_L;
+            for(int k = 0; k < status_L.size(); k++){
+                if((int)status_L[k] == 1){
+                    _cpt0_L.push_back(pt0_L[k]);
+                    _cpt1_L.push_back(pt1_L[k]);
+                }
+            }
+
+            vector<uchar> mask_ess_L, mask_ess_R;
+            //Mat ess = findEssentialMat(_cpt0, _cpt1, cam, LMEDS, 0.99, 0.1, mask_ess);
+            Mat ess_L = findEssentialMat(_cpt0_L, _cpt1_L, cam_L, RANSAC, 0.95, 0.05, mask_ess_L);
+
+            vector<Point2f> cpt0_L, cpt1_L;
+            for(int k = 0; k < mask_ess_L.size(); k++){
+                if((int)mask_ess_L[k] == 1){
+                    cpt0_L.push_back(_cpt0_L[k]);
+                    cpt1_L.push_back(_cpt1_L[k]);
+                }
+            }
+
+            // Initialize
+            Mat rot_L, tr_L;
+
+            vector<uchar> rec_mask_L, rec_mask_R;
+            recoverPose(ess_L, cpt0_L, cpt1_L, cam_L, rot_L, tr_L, rec_mask_L);
+
+            MatrixXd erot_L(3, 3), etr_L(3, 1);
+
+            cv2eigen(rot_L, erot_L);
+            cv2eigen(tr_L, etr_L);
+
+            if(erot_L.trace() < 3.0 * 0.9){
+                erot_L = MatrixXd::Identity(3, 3);
+                etr_L << 0.1, 0.1, -0.9;
+            }
+
+            if(etr_L.norm() < 1E-5){
+                etr_L << 0.1, 0.1, -0.9;
+            }
+
+            vector<Point2f> fpt0, fpt1;
+            double dx, dy, mag;
+            for(int k = 0; k < rec_mask_L.size(); k++){
+                if((int)rec_mask_L[k] == 255){
+                    fpt0.push_back(cpt0_L[k]);
+                    fpt1.push_back(cpt1_L[k]);
+                }
+            }
+
+            reproj rep;
+            rep.p0 = fpt0;
+            rep.p1 = fpt1;
+            rep.R = erot_L;
+            rep.t = etr_L;
             reprojs.insert(make_pair(make_pair(i0, i1), rep));
         }
     }
@@ -565,21 +753,30 @@ int main(){
     vector<int> limits;
     string src_fn, tgt_fn;
     const string base_img = "/home/ronnypetson/dataset/sequences/09/image_0/";
+    const string base_img_R = "/home/ronnypetson/dataset/sequences/09/image_1/";
 
     vector<MatrixXd> all_T, all_GT;
     MatrixXd cT = MatrixXd::Identity(4, 4);
 
-    const int num_frames = 400;
+    const int num_frames = 10;
     const int stride = 1;
-    vector<vector<Point2f> > key_points;
-    vector<string> img_fns;
+    vector<vector<Point2f> > key_points, key_points_R;
+    vector<string> img_fns, img_fns_R;
 
     vector<Mat> descs;
-    thread kp_extractor(extract_kp,
+    //thread kp_extractor(extract_kp,
+    //                    base_img,
+    //                    num_frames,
+    //                    ref(key_points),
+    //                    ref(img_fns));
+    thread kp_extractor(extract_kp_stereo,
                         base_img,
+                        base_img_R,
                         num_frames,
                         ref(key_points),
-                        ref(img_fns));
+                        ref(key_points_R),
+                        ref(img_fns),
+                        ref(img_fns_R));
     // thread kp_extractor(extract_good_kp,
     //                     base_img,
     //                     num_frames,
@@ -595,20 +792,21 @@ int main(){
         //if(i > 0){
         //    window.push_back(make_pair(i + 1, 0));
         //}
-        if(i < ws - 2){
-            //window.push_back(make_pair(i + 2, i));
-            window.push_back(make_pair(i, i + 2));
-        }
+        //if(i < ws - 2){
+        //    window.push_back(make_pair(i, i + 2));
+        //}
         //if(i < ws - 3){
-        //    //window.push_back(make_pair(i + 2, i));
         //    window.push_back(make_pair(i, i + 3));
         //}
     }
 
     map<pair<int, int>, reproj> reprojs;
 
-    thread match_kp(robust_ass, window, stride, num_frames,
-                    ref(key_points), ref(img_fns), cam, ref(reprojs));
+    //thread match_kp(robust_ass, window, stride, num_frames,
+    //                ref(key_points), ref(img_fns), cam, ref(reprojs));
+    thread match_kp(robust_ass_stereo, window, stride, num_frames,
+                    ref(key_points), ref(key_points_R), ref(img_fns), ref(img_fns_R),
+                    cam, cam, ref(reprojs));
     //thread match_kp(really_robust_ass, window, stride, num_frames,
     //                ref(key_points), ref(img_fns), ref(descs), cam, ref(reprojs));
     
