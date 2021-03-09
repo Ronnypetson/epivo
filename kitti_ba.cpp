@@ -292,6 +292,10 @@ int robust_ass_stereo(const vector<pair<int, int> > window,
     tx_LR << 0.0, -t_LR(2, 0), t_LR(1, 0),
              t_LR(2, 0), 0.0, -t_LR(0, 0),
              -t_LR(1, 0), t_LR(0, 0), 0.0;
+    MatrixXd F(3, 3);
+    Mat _F;
+    F = R_LR * tx_LR;
+    eigen2cv(F, _F);
 
     Ptr<StereoBM> stereo = StereoBM::create(96, 15);
     Ptr<StereoSGBM> sgbm = StereoSGBM::create(-3,    //int minDisparity
@@ -357,19 +361,30 @@ int robust_ass_stereo(const vector<pair<int, int> > window,
             //waitKey(0);
             float x_R;
             MatrixXd _pt_L(3, 1), _pt_R(3, 1);
-            for(int i = 0; i < pt0_L.size(); i++){
+            for(int k = 0; k < pt0_L.size(); k++){
                 //cout << pt0_L[i].x - pt0_R[i].x << " " << pt0_L[i].y - pt0_R[i].y << endl;
                 //cout << pt0_L[i].x << " " <<
                 //    disp.at<short>(pt0_L[i].y, pt0_L[i].x) / 16.0 << endl;
                 //cout << endl;
-                x_R = (float)pt0_L[i].x - disp.at<short>(pt0_L[i].y, pt0_L[i].x) / 16.0;
-                spt0_R.push_back(Point2f(x_R, (float)pt0_L[i].y));
+                x_R = (float)pt0_L[k].x - disp.at<short>(pt0_L[k].y, pt0_L[k].x) / 16.0;
+                spt0_R.push_back(Point2f(x_R, (float)pt0_L[k].y));
 
-                _pt_L << pt0_L[i].x, pt0_L[i].y, 1.0;
-                _pt_R << x_R, pt0_L[i].y, 1.0;
+                _pt_L << pt0_L[k].x, pt0_L[k].y, 1.0;
+                _pt_R << x_R, pt0_L[k].y, 1.0;
                 //_pt_R << pt0_R[i].x, pt0_R[i].y, 1.0; // diferença grande no erro epipolar
 
-                cout << (_pt_R.transpose() * R_LR * (tx_LR * _pt_L))(0, 0) << " ";
+                //cout << (_pt_R.transpose() * R_LR * (tx_LR * _pt_L))(0, 0) << " ";
+            }
+
+            vector<Point2f> corr_pt0_L, corr_pt0_R;
+            
+            correctMatches(_F, pt0_L, spt0_R, corr_pt0_L, corr_pt0_R);
+            
+            for(int k = 0; k < 10; k++){
+                cout << pt0_L[k].x - corr_pt0_L[k].x << " "
+                     << pt0_L[k].y - corr_pt0_L[k].y << " "
+                     << spt0_R[k].x - corr_pt0_R[k].x << " "
+                     << spt0_R[k].y - corr_pt0_R[k].y << endl;
             }
 
             calcOpticalFlowPyrLK(src_L, tgt_L, pt0_L, pt1_L, status_L, err_L);
