@@ -273,6 +273,8 @@ int robust_ass_stereo(const vector<pair<int, int> > window,
                       const vector<string> &img_fns_R,
                       const Mat cam_L,
                       const Mat cam_R,
+                      const MatrixXd R_LR,
+                      const MatrixXd t_LR,
                       map<pair<int, int>, reproj> &reprojs){
     assert(stride > 0);
     assert(reprojs.size() == 0);
@@ -285,6 +287,11 @@ int robust_ass_stereo(const vector<pair<int, int> > window,
     int i0, i1;
     string src_fn_L, tgt_fn_L;
     string src_fn_R, tgt_fn_R;
+
+    MatrixXd tx_LR(3, 3);
+    tx_LR << 0.0, -t_LR(2, 0), t_LR(1, 0),
+             t_LR(2, 0), 0.0, -t_LR(0, 0),
+             -t_LR(1, 0), t_LR(0, 0), 0.0;
 
     Ptr<StereoBM> stereo = StereoBM::create(96, 15);
     Ptr<StereoSGBM> sgbm = StereoSGBM::create(-3,    //int minDisparity
@@ -343,14 +350,26 @@ int robust_ass_stereo(const vector<pair<int, int> > window,
 
             calcOpticalFlowPyrLK(src_L, src_R, pt0_L, pt0_R, status_L, err_L);
 
+            vector<Point2f> spt0_R;
+
             //imshow("Left", src_L);
             //imshow("Disparity", norm_disp);
             //waitKey(0);
+            float x_R;
+            MatrixXd _pt_L(3, 1), _pt_R(3, 1);
             for(int i = 0; i < pt0_L.size(); i++){
-                cout << pt0_L[i].x - pt0_R[i].x << " " << pt0_L[i].y - pt0_R[i].y << endl;
-                cout << pt0_L[i].x << " " <<
-                    disp.at<short>(pt0_L[i].y, pt0_L[i].x) / 16.0 << endl;
-                cout << endl;
+                //cout << pt0_L[i].x - pt0_R[i].x << " " << pt0_L[i].y - pt0_R[i].y << endl;
+                //cout << pt0_L[i].x << " " <<
+                //    disp.at<short>(pt0_L[i].y, pt0_L[i].x) / 16.0 << endl;
+                //cout << endl;
+                x_R = (float)pt0_L[i].x - disp.at<short>(pt0_L[i].y, pt0_L[i].x) / 16.0;
+                spt0_R.push_back(Point2f(x_R, (float)pt0_L[i].y));
+
+                _pt_L << pt0_L[i].x, pt0_L[i].y, 1.0;
+                _pt_R << x_R, pt0_L[i].y, 1.0;
+                //_pt_R << pt0_R[i].x, pt0_R[i].y, 1.0; // diferença grande no erro epipolar
+
+                cout << (_pt_R.transpose() * R_LR * (tx_LR * _pt_L))(0, 0) << " ";
             }
 
             calcOpticalFlowPyrLK(src_L, tgt_L, pt0_L, pt1_L, status_L, err_L);
@@ -748,6 +767,23 @@ int main(){
             0.0,      718.8560, 185.2157,
             0.0,      0.0,      1.0;
     cam_ = cam_.inverse();
+
+    MatrixXd P_L(4, 4), P_R(4, 4);
+    P_L << 7.070912E2, 0.0, 6.018873E2, 0.0,
+           0.0, 7.070912E2, 1.831104E2, 0.0,
+           0.0, 0.0, 1.0, 0.0,
+           0.0, 0.0, 0.0, 1.0;
+    P_R << 7.070912E2, 0.0, 6.018873E2, -3.798145E2,
+           0.0, 7.070912E2, 1.831104E2, 0.0,
+           0.0, 0.0, 1.0, 0.0,
+           0.0, 0.0, 0.0, 1.0;
+    MatrixXd T_LR(4, 4), R_LR(3, 3), t_LR(3, 1);
+    T_LR = P_L.inverse() * P_R;
+    cout << T_LR << endl;
+    R_LR = T_LR.block<3, 3>(0, 0);
+    t_LR = T_LR.block<3, 1>(0, 3);
+    //exit(0);
+
     MatrixXd poses = load_csv<MatrixXd>("/home/ronnypetson/dataset/poses/09.txt");
     vector<MatrixXd> X;
     vector<int> limits;
@@ -806,7 +842,7 @@ int main(){
     //                ref(key_points), ref(img_fns), cam, ref(reprojs));
     thread match_kp(robust_ass_stereo, window, stride, num_frames,
                     ref(key_points), ref(key_points_R), ref(img_fns), ref(img_fns_R),
-                    cam, cam, ref(reprojs));
+                    cam, cam, R_LR, t_LR, ref(reprojs));
     //thread match_kp(really_robust_ass, window, stride, num_frames,
     //                ref(key_points), ref(img_fns), ref(descs), cam, ref(reprojs));
     
