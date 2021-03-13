@@ -78,7 +78,7 @@ int extract_kp_stereo(const string base_img_L,
     assert(img_fns_R.size() == 0);
 
     Mat src_L, src_R;
-    Ptr<FastFeatureDetector> detector = FastFeatureDetector::create(40);
+    Ptr<FastFeatureDetector> detector = FastFeatureDetector::create(); // 40
     for(int i = 0; i < num_frames; i++){
         string src_fn_L, src_fn_R;
         src_fn_L = base_img_L;
@@ -292,6 +292,8 @@ int robust_ass_stereo(const vector<pair<int, int> > window,
     tx_LR << 0.0, -t_LR(2, 0), t_LR(1, 0),
              t_LR(2, 0), 0.0, -t_LR(0, 0),
              -t_LR(1, 0), t_LR(0, 0), 0.0;
+    tx_LR *= -1.0; // DELET
+
     MatrixXd F(3, 3);
     Mat _F;
     F = R_LR * tx_LR;
@@ -299,16 +301,16 @@ int robust_ass_stereo(const vector<pair<int, int> > window,
 
     Ptr<StereoBM> stereo = StereoBM::create(96, 15);
     Ptr<StereoSGBM> sgbm = StereoSGBM::create(-3,    //int minDisparity
-                                            96,     //int numDisparities
-                                            7,      //int SADWindowSize
-                                            60,    //int P1 = 0
-                                            2400,   //int P2 = 0
-                                            90,     //int disp12MaxDiff = 0
-                                            16,     //int preFilterCap = 0
-                                            1,      //int uniquenessRatio = 0
-                                            60,    //int speckleWindowSize = 0
-                                            20,     //int speckleRange = 0
-                                            true);  //bool fullDP = false
+                                              96,     //int numDisparities
+                                              7,      //int SADWindowSize
+                                              60,    //int P1 = 0
+                                              2400,   //int P2 = 0
+                                              90,     //int disp12MaxDiff = 0
+                                              16,     //int preFilterCap = 0
+                                              1,      //int uniquenessRatio = 0
+                                              60,    //int speckleWindowSize = 0
+                                              20,     //int speckleRange = 0
+                                              true);  //bool fullDP = false
 
     for(int i = 0; i < num_frames; i += stride){
         for(int j = 0; j < window.size(); j++){
@@ -327,10 +329,19 @@ int robust_ass_stereo(const vector<pair<int, int> > window,
                 this_thread::sleep_for(chrono::milliseconds(10));
             }
 
-            src_fn_L = img_fns_L[i0];
-            tgt_fn_L = img_fns_L[i1];
-
-            src_fn_R = img_fns_R[i0];
+            if(i0 % 2 == 0){
+                src_fn_L = img_fns_L[i0];
+                src_fn_R = img_fns_R[i0];
+            } else {
+                src_fn_L = img_fns_R[i0];
+                src_fn_R = img_fns_L[i0];
+            }
+            
+            if(i1 % 2 == 0){
+                tgt_fn_L = img_fns_L[i1];
+            } else {
+                tgt_fn_L = img_fns_R[i1];
+            }
 
             //cout << src_fn_L << endl;
             //cout << src_fn_R << endl;
@@ -346,13 +357,12 @@ int robust_ass_stereo(const vector<pair<int, int> > window,
             //stereo->compute(src_L, src_R, disp);
             sgbm->compute(src_L, src_R, disp);
             
-            normalize(disp, norm_disp, 0.0, 1.0, NORM_MINMAX, CV_32F);
-
+            //normalize(disp, norm_disp, 0.0, 1.0, NORM_MINMAX, CV_32F);
             //cout << disp.rows << " " << disp.cols << endl;
             
             pt0_L = source_kp_L[i0];
 
-            calcOpticalFlowPyrLK(src_L, src_R, pt0_L, pt0_R, status_L, err_L);
+            //calcOpticalFlowPyrLK(src_L, src_R, pt0_L, pt0_R, status_L, err_L);
 
             vector<Point2f> spt0_R;
 
@@ -369,37 +379,53 @@ int robust_ass_stereo(const vector<pair<int, int> > window,
                 x_R = (float)pt0_L[k].x - disp.at<short>(pt0_L[k].y, pt0_L[k].x) / 16.0;
                 spt0_R.push_back(Point2f(x_R, (float)pt0_L[k].y));
 
-                _pt_L << pt0_L[k].x, pt0_L[k].y, 1.0;
-                _pt_R << x_R, pt0_L[k].y, 1.0;
-                //_pt_R << pt0_R[i].x, pt0_R[i].y, 1.0; // diferença grande no erro epipolar
+                //_pt_L << pt0_L[k].x, pt0_L[k].y, 1.0;
+                //_pt_R << x_R, pt0_L[k].y, 1.0;
+                ////_pt_R << pt0_R[i].x, pt0_R[i].y, 1.0; // diferença grande no erro epipolar
 
                 //cout << (_pt_R.transpose() * R_LR * (tx_LR * _pt_L))(0, 0) << " ";
             }
 
             vector<Point2f> corr_pt0_L, corr_pt0_R;
             
-            correctMatches(_F, pt0_L, spt0_R, corr_pt0_L, corr_pt0_R);
+            //correctMatches(_F, pt0_L, spt0_R, corr_pt0_L, corr_pt0_R);
+            //correctMatches(_F, pt0_L, pt0_R, corr_pt0_L, corr_pt0_R);
             
-            for(int k = 0; k < 10; k++){
-                cout << pt0_L[k].x - corr_pt0_L[k].x << " "
-                     << pt0_L[k].y - corr_pt0_L[k].y << " "
-                     << spt0_R[k].x - corr_pt0_R[k].x << " "
-                     << spt0_R[k].y - corr_pt0_R[k].y << endl;
-            }
+            //for(int k = 0; k < 10; k++){
+            //    cout << pt0_L[k].x - corr_pt0_L[k].x << " "
+            //         << pt0_L[k].y - corr_pt0_L[k].y << " "
+            //         << spt0_R[k].x - corr_pt0_R[k].x << " "
+            //         << spt0_R[k].y - corr_pt0_R[k].y << "\t\t";
+            //}
 
             calcOpticalFlowPyrLK(src_L, tgt_L, pt0_L, pt1_L, status_L, err_L);
+            calcOpticalFlowPyrLK(tgt_L, src_R, pt1_L, pt0_R, status_R, err_R);
 
+            float dx, dy;
+            int cnt = 0;
             vector<Point2f> _cpt0_L, _cpt1_L;
-            for(int k = 0; k < status_L.size(); k++){
-                if((int)status_L[k] == 1){
-                    _cpt0_L.push_back(pt0_L[k]);
-                    _cpt1_L.push_back(pt1_L[k]);
+            for(int k = 0; k < pt0_L.size(); k++){
+                dx = pt0_R[k].x - spt0_R[k].x;
+                dy = pt0_R[k].y - spt0_R[k].y;
+
+                if(abs(dx) < 0.4 && abs(dy) < 0.4){
+                    //cnt++;
+                    //_cpt0_L.push_back(pt0_L[k]);
+                    //_cpt1_L.push_back(pt1_L[k]);
                 }
+            }
+            //cout << cnt << " ok. ";
+
+            for(int k = 0; k < status_L.size(); k++){
+               if((int)status_L[k] == 1){
+                   _cpt0_L.push_back(pt0_L[k]);
+                   _cpt1_L.push_back(pt1_L[k]);
+               }
             }
 
             vector<uchar> mask_ess_L, mask_ess_R;
-            //Mat ess = findEssentialMat(_cpt0, _cpt1, cam, LMEDS, 0.99, 0.1, mask_ess);
-            Mat ess_L = findEssentialMat(_cpt0_L, _cpt1_L, cam_L, RANSAC, 0.95, 0.05, mask_ess_L);
+            Mat ess_L = findEssentialMat(_cpt0_L, _cpt1_L, cam_L, LMEDS, 0.99, 0.1, mask_ess_L);
+            //Mat ess_L = findEssentialMat(_cpt0_L, _cpt1_L, cam_L, RANSAC, 0.95, 0.05, mask_ess_L);
 
             vector<Point2f> cpt0_L, cpt1_L;
             for(int k = 0; k < mask_ess_L.size(); k++){
@@ -430,9 +456,9 @@ int robust_ass_stereo(const vector<pair<int, int> > window,
             }
 
             vector<Point2f> fpt0, fpt1;
-            double dx, dy, mag;
+            //double dx, dy, mag;
             for(int k = 0; k < rec_mask_L.size(); k++){
-                if((int)rec_mask_L[k] == 255){
+                if((int)rec_mask_L[k] == 255 || true){
                     fpt0.push_back(cpt0_L[k]);
                     fpt1.push_back(cpt1_L[k]);
                 }
@@ -799,17 +825,17 @@ int main(){
     t_LR = T_LR.block<3, 1>(0, 3);
     //exit(0);
 
-    MatrixXd poses = load_csv<MatrixXd>("/home/ronnypetson/dataset/poses/09.txt");
+    MatrixXd poses = load_csv<MatrixXd>("/home/ronnypetson/dataset/poses/01.txt");
     vector<MatrixXd> X;
     vector<int> limits;
     string src_fn, tgt_fn;
-    const string base_img = "/home/ronnypetson/dataset/sequences/09/image_0/";
-    const string base_img_R = "/home/ronnypetson/dataset/sequences/09/image_1/";
+    const string base_img = "/home/ronnypetson/dataset/sequences/01/image_0/";
+    const string base_img_R = "/home/ronnypetson/dataset/sequences/01/image_1/";
 
     vector<MatrixXd> all_T, all_GT;
     MatrixXd cT = MatrixXd::Identity(4, 4);
 
-    const int num_frames = 10;
+    const int num_frames = 20;
     const int stride = 1;
     vector<vector<Point2f> > key_points, key_points_R;
     vector<string> img_fns, img_fns_R;
@@ -843,9 +869,9 @@ int main(){
         //if(i > 0){
         //    window.push_back(make_pair(i + 1, 0));
         //}
-        //if(i < ws - 2){
-        //    window.push_back(make_pair(i, i + 2));
-        //}
+        if(i < ws - 2){
+            window.push_back(make_pair(i, i + 2));
+        }
         //if(i < ws - 3){
         //    window.push_back(make_pair(i, i + 3));
         //}
