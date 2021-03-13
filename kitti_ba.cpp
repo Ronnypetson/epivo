@@ -156,9 +156,22 @@ int extract_good_kp(const string base_img,
 }
 
 
+struct _reproj{
+    vector<Point2f> p0, p1;
+    MatrixXd R, t;
+    // Reprojection weight. Take w = 0.0 in order to freeze R, t
+    double w;
+};
+
+
 struct reproj{
     vector<Point2f> p0, p1;
     MatrixXd R, t;
+    bool stereo;
+    // Reprojection weight. Take w = 0.0 in order to freeze R, t
+    double w;
+    // Auxiliary reprojections for stereo
+    _reproj rep_L0toR0, rep_R0toL1;
 };
 
 
@@ -264,6 +277,78 @@ int robust_ass(const vector<pair<int, int> > window,
 }
 
 
+int _initializer(const Mat &src,
+                 const Mat &tgt, 
+                 const vector<Point2f> &pt0,
+                 const Mat cam,
+                 vector<Point2f> &fpt0,
+                 vector<Point2f> &fpt1,
+                 MatrixXd &R,
+                 MatrixXd &t){
+    
+    assert(fpt0.size() == 0);
+    assert(fpt1.size() == 0);
+
+    vector<uchar> status;
+    vector<float> err;
+
+    vector<Point2f> pt1;
+    calcOpticalFlowPyrLK(src, tgt, pt0, pt1, status, err);
+    vector<Point2f> _cpt0, _cpt1;
+
+    for(int k = 0; k < status.size(); k++){
+        if((int)status[k] == 1){
+            _cpt0.push_back(pt0[k]);
+            _cpt1.push_back(pt1[k]);
+        }
+    }
+
+    vector<uchar> mask_ess;
+    //Mat ess = findEssentialMat(_cpt0_L, _cpt1_L, cam_L, LMEDS, 0.99, 0.1, mask_ess_L);
+    Mat ess = findEssentialMat(_cpt0, _cpt1, cam, RANSAC, 0.99, 0.05, mask_ess);
+
+    vector<Point2f> cpt0, cpt1;
+    for(int k = 0; k < mask_ess.size(); k++){
+        if((int)mask_ess[k] == 1){
+            cpt0.push_back(_cpt0[k]);
+            cpt1.push_back(_cpt1[k]);
+        }
+    }
+
+    // Initialize
+    Mat rot, tr;
+
+    vector<uchar> rec_mask;
+    recoverPose(ess, cpt0, cpt1, cam, rot, tr, rec_mask);
+
+    MatrixXd erot(3, 3), etr(3, 1);
+
+    cv2eigen(rot, erot);
+    cv2eigen(tr, etr);
+
+    if(erot.trace() < 3.0 * 0.9){
+        erot = MatrixXd::Identity(3, 3);
+        // FIX
+        etr << 0.1, 0.1, -0.9;
+    }
+
+    // FIX
+    if(etr.norm() < 1E-5){
+        etr << 0.1, 0.1, -0.9;
+    }
+
+    R = erot;
+    t = etr;
+
+    for(int k = 0; k < rec_mask.size(); k++){
+        if((int)rec_mask[k] == 255 || true){
+            fpt0.push_back(cpt0[k]);
+            fpt1.push_back(cpt1[k]);
+        }
+    }
+}
+
+
 int robust_ass_stereo(const vector<pair<int, int> > window,
                       const int stride,
                       const int num_frames,
@@ -317,7 +402,9 @@ int robust_ass_stereo(const vector<pair<int, int> > window,
             i0 = i + window[j].first;
             i1 = i + window[j].second;
 
-            if(reprojs.find(make_pair(i0, i1)) != reprojs.end()){
+            if(reprojs.find(make_pair(2 * i0, 2 * i1)) != reprojs.end()
+            && reprojs.find(make_pair(2 * i0 + 1, 2 * i1)) != reprojs.end()
+            && reprojs.find(make_pair(2 * i0, 2 * i0 + 1)) != reprojs.end()){
                 continue;
             }
 
@@ -329,64 +416,51 @@ int robust_ass_stereo(const vector<pair<int, int> > window,
                 this_thread::sleep_for(chrono::milliseconds(10));
             }
 
-            if(i0 % 2 == 0){
-                src_fn_L = img_fns_L[i0];
-                src_fn_R = img_fns_R[i0];
-            } else {
-                src_fn_L = img_fns_R[i0];
-                src_fn_R = img_fns_L[i0];
-            }
-            
-            if(i1 % 2 == 0){
-                tgt_fn_L = img_fns_L[i1];
-            } else {
-                tgt_fn_L = img_fns_R[i1];
-            }
-
-            //cout << src_fn_L << endl;
-            //cout << src_fn_R << endl;
+            src_fn_L = img_fns_L[i0];
+            src_fn_R = img_fns_R[i0];
+            tgt_fn_L = img_fns_L[i1];
 
             src_L = imread(src_fn_L, IMREAD_GRAYSCALE);
             tgt_L = imread(tgt_fn_L, IMREAD_GRAYSCALE);
-
             src_R = imread(src_fn_R, IMREAD_GRAYSCALE);
 
             vector<Point2f> pt0_L, pt0_R, pt1_L;
 
-            Mat disp, norm_disp;
-            //stereo->compute(src_L, src_R, disp);
-            sgbm->compute(src_L, src_R, disp);
+            // Mat disp, norm_disp;
+            // //stereo->compute(src_L, src_R, disp);
+            // sgbm->compute(src_L, src_R, disp);
             
             //normalize(disp, norm_disp, 0.0, 1.0, NORM_MINMAX, CV_32F);
             //cout << disp.rows << " " << disp.cols << endl;
             
             pt0_L = source_kp_L[i0];
+            pt0_R = source_kp_R[i0];
 
             //calcOpticalFlowPyrLK(src_L, src_R, pt0_L, pt0_R, status_L, err_L);
 
-            vector<Point2f> spt0_R;
+            // vector<Point2f> spt0_R;
 
-            //imshow("Left", src_L);
-            //imshow("Disparity", norm_disp);
-            //waitKey(0);
-            float x_R;
-            MatrixXd _pt_L(3, 1), _pt_R(3, 1);
-            for(int k = 0; k < pt0_L.size(); k++){
-                //cout << pt0_L[i].x - pt0_R[i].x << " " << pt0_L[i].y - pt0_R[i].y << endl;
-                //cout << pt0_L[i].x << " " <<
-                //    disp.at<short>(pt0_L[i].y, pt0_L[i].x) / 16.0 << endl;
-                //cout << endl;
-                x_R = (float)pt0_L[k].x - disp.at<short>(pt0_L[k].y, pt0_L[k].x) / 16.0;
-                spt0_R.push_back(Point2f(x_R, (float)pt0_L[k].y));
+            // //imshow("Left", src_L);
+            // //imshow("Disparity", norm_disp);
+            // //waitKey(0);
+            // float x_R;
+            // MatrixXd _pt_L(3, 1), _pt_R(3, 1);
+            // for(int k = 0; k < pt0_L.size(); k++){
+            //     //cout << pt0_L[i].x - pt0_R[i].x << " " << pt0_L[i].y - pt0_R[i].y << endl;
+            //     //cout << pt0_L[i].x << " " <<
+            //     //    disp.at<short>(pt0_L[i].y, pt0_L[i].x) / 16.0 << endl;
+            //     //cout << endl;
+            //     x_R = (float)pt0_L[k].x - disp.at<short>(pt0_L[k].y, pt0_L[k].x) / 16.0;
+            //     spt0_R.push_back(Point2f(x_R, (float)pt0_L[k].y));
 
-                //_pt_L << pt0_L[k].x, pt0_L[k].y, 1.0;
-                //_pt_R << x_R, pt0_L[k].y, 1.0;
-                ////_pt_R << pt0_R[i].x, pt0_R[i].y, 1.0; // diferença grande no erro epipolar
+            //     //_pt_L << pt0_L[k].x, pt0_L[k].y, 1.0;
+            //     //_pt_R << x_R, pt0_L[k].y, 1.0;
+            //     ////_pt_R << pt0_R[i].x, pt0_R[i].y, 1.0; // diferença grande no erro epipolar
 
-                //cout << (_pt_R.transpose() * R_LR * (tx_LR * _pt_L))(0, 0) << " ";
-            }
+            //     //cout << (_pt_R.transpose() * R_LR * (tx_LR * _pt_L))(0, 0) << " ";
+            // }
 
-            vector<Point2f> corr_pt0_L, corr_pt0_R;
+            //vector<Point2f> corr_pt0_L, corr_pt0_R;
             
             //correctMatches(_F, pt0_L, spt0_R, corr_pt0_L, corr_pt0_R);
             //correctMatches(_F, pt0_L, pt0_R, corr_pt0_L, corr_pt0_R);
@@ -398,78 +472,110 @@ int robust_ass_stereo(const vector<pair<int, int> > window,
             //         << spt0_R[k].y - corr_pt0_R[k].y << "\t\t";
             //}
 
-            calcOpticalFlowPyrLK(src_L, tgt_L, pt0_L, pt1_L, status_L, err_L);
-            calcOpticalFlowPyrLK(tgt_L, src_R, pt1_L, pt0_R, status_R, err_R);
+            // calcOpticalFlowPyrLK(src_L, tgt_L, pt0_L, pt1_L, status_L, err_L);
 
-            float dx, dy;
-            int cnt = 0;
-            vector<Point2f> _cpt0_L, _cpt1_L;
-            for(int k = 0; k < pt0_L.size(); k++){
-                dx = pt0_R[k].x - spt0_R[k].x;
-                dy = pt0_R[k].y - spt0_R[k].y;
+            // // float dx, dy;
+            // // int cnt = 0;
+            // vector<Point2f> _cpt0_L, _cpt1_L;
+            // // for(int k = 0; k < pt0_L.size(); k++){
+            // //     dx = pt0_R[k].x - spt0_R[k].x;
+            // //     dy = pt0_R[k].y - spt0_R[k].y;
 
-                if(abs(dx) < 0.4 && abs(dy) < 0.4){
-                    //cnt++;
-                    //_cpt0_L.push_back(pt0_L[k]);
-                    //_cpt1_L.push_back(pt1_L[k]);
-                }
-            }
-            //cout << cnt << " ok. ";
+            // //     if(abs(dx) < 0.4 && abs(dy) < 0.4){
+            // //         //cnt++;
+            // //         //_cpt0_L.push_back(pt0_L[k]);
+            // //         //_cpt1_L.push_back(pt1_L[k]);
+            // //     }
+            // // }
+            // // //cout << cnt << " ok. ";
 
-            for(int k = 0; k < status_L.size(); k++){
-               if((int)status_L[k] == 1){
-                   _cpt0_L.push_back(pt0_L[k]);
-                   _cpt1_L.push_back(pt1_L[k]);
-               }
-            }
+            // for(int k = 0; k < status_L.size(); k++){
+            //    if((int)status_L[k] == 1){
+            //        _cpt0_L.push_back(pt0_L[k]);
+            //        _cpt1_L.push_back(pt1_L[k]);
+            //    }
+            // }
 
-            vector<uchar> mask_ess_L, mask_ess_R;
-            Mat ess_L = findEssentialMat(_cpt0_L, _cpt1_L, cam_L, LMEDS, 0.99, 0.1, mask_ess_L);
-            //Mat ess_L = findEssentialMat(_cpt0_L, _cpt1_L, cam_L, RANSAC, 0.95, 0.05, mask_ess_L);
+            // vector<uchar> mask_ess_L, mask_ess_R;
+            // //Mat ess_L = findEssentialMat(_cpt0_L, _cpt1_L, cam_L, LMEDS, 0.99, 0.1, mask_ess_L);
+            // Mat ess_L = findEssentialMat(_cpt0_L, _cpt1_L, cam_L, RANSAC, 0.99, 0.05, mask_ess_L);
 
-            vector<Point2f> cpt0_L, cpt1_L;
-            for(int k = 0; k < mask_ess_L.size(); k++){
-                if((int)mask_ess_L[k] == 1){
-                    cpt0_L.push_back(_cpt0_L[k]);
-                    cpt1_L.push_back(_cpt1_L[k]);
-                }
-            }
+            // vector<Point2f> cpt0_L, cpt1_L;
+            // for(int k = 0; k < mask_ess_L.size(); k++){
+            //     if((int)mask_ess_L[k] == 1){
+            //         cpt0_L.push_back(_cpt0_L[k]);
+            //         cpt1_L.push_back(_cpt1_L[k]);
+            //     }
+            // }
 
-            // Initialize
-            Mat rot_L, tr_L;
+            // // Initialize
+            // Mat rot_L, tr_L;
 
-            vector<uchar> rec_mask_L, rec_mask_R;
-            recoverPose(ess_L, cpt0_L, cpt1_L, cam_L, rot_L, tr_L, rec_mask_L);
+            // vector<uchar> rec_mask_L, rec_mask_R;
+            // recoverPose(ess_L, cpt0_L, cpt1_L, cam_L, rot_L, tr_L, rec_mask_L);
 
-            MatrixXd erot_L(3, 3), etr_L(3, 1);
+            // MatrixXd erot_L(3, 3), etr_L(3, 1);
 
-            cv2eigen(rot_L, erot_L);
-            cv2eigen(tr_L, etr_L);
+            // cv2eigen(rot_L, erot_L);
+            // cv2eigen(tr_L, etr_L);
 
-            if(erot_L.trace() < 3.0 * 0.9){
-                erot_L = MatrixXd::Identity(3, 3);
-                etr_L << 0.1, 0.1, -0.9;
-            }
+            // if(erot_L.trace() < 3.0 * 0.9){
+            //     erot_L = MatrixXd::Identity(3, 3);
+            //     etr_L << 0.1, 0.1, -0.9;
+            // }
 
-            if(etr_L.norm() < 1E-5){
-                etr_L << 0.1, 0.1, -0.9;
-            }
+            // if(etr_L.norm() < 1E-5){
+            //     etr_L << 0.1, 0.1, -0.9;
+            // }
+
+            // vector<Point2f> fpt0, fpt1;
+            // //double dx, dy, mag;
+            // for(int k = 0; k < rec_mask_L.size(); k++){
+            //     if((int)rec_mask_L[k] == 255 || true){
+            //         fpt0.push_back(cpt0_L[k]);
+            //         fpt1.push_back(cpt1_L[k]);
+            //     }
+            // }
 
             vector<Point2f> fpt0, fpt1;
-            //double dx, dy, mag;
-            for(int k = 0; k < rec_mask_L.size(); k++){
-                if((int)rec_mask_L[k] == 255 || true){
-                    fpt0.push_back(cpt0_L[k]);
-                    fpt1.push_back(cpt1_L[k]);
-                }
-            }
+            MatrixXd erot_L, etr_L;
+            _initializer(src_L, tgt_L, pt0_L, cam_L, fpt0, fpt1, erot_L, etr_L);
 
             reproj rep;
             rep.p0 = fpt0;
             rep.p1 = fpt1;
             rep.R = erot_L;
             rep.t = etr_L;
-            reprojs.insert(make_pair(make_pair(i0, i1), rep));
+            rep.w = 1.0;
+            //rep.stereo = true;
+
+            reprojs.insert(make_pair(make_pair(2 * i0, 2 * i1), rep));
+
+            vector<Point2f> fpt0R, fpt1L;
+            MatrixXd erot_R, etr_R;
+            _initializer(src_R, tgt_L, pt0_R, cam_R, fpt0R, fpt1L, erot_R, etr_R);
+
+            reproj rep_R0toL1;
+            rep_R0toL1.p0 = fpt0R;
+            rep_R0toL1.p1 = fpt1L;
+            rep_R0toL1.R = erot_R;
+            rep_R0toL1.t = etr_R;
+            rep_R0toL1.w = 1.0;
+
+            reprojs.insert(make_pair(make_pair(2 * i0 + 1, 2 * i1), rep_R0toL1));
+
+            reproj rep_L0toR0;
+            rep_L0toR0.p0 = fpt0R; // Dummy points
+            rep_L0toR0.p1 = fpt0R; // 
+            rep_L0toR0.R = R_LR;
+            rep_L0toR0.t = t_LR;
+            rep_L0toR0.w = 0.0;
+
+            reprojs.insert(make_pair(make_pair(2 * i0, 2 * i0 + 1), rep_L0toR0));
+
+            cout << "put " <<  "(" << 2 * i0 << ", " << 2 * i1 << ")"
+                 << ", " <<  "(" << 2 * i0 + 1 << ", " << 2 * i1 << ")"
+                 << ", " <<  "(" << 2 * i0 << ", " << 2 * i0 + 1 << ")" << endl;
         }
     }
 }
@@ -799,6 +905,169 @@ int bundle_adjustment(map<pair<int, int>, reproj> &reprojs,
 }
 
 
+int bundle_adjustment_stereo(map<pair<int, int>, reproj> &reprojs,
+                             const vector<pair<int, int> > window,
+                             const int stride,
+                             const int num_frames,
+                             const Mat cam,
+                             vector<MatrixXd> &opt_T){
+    assert(stride > 0);
+    assert(opt_T.size() == 0);
+
+    vector<bool> optimized;
+    for(int i = 0; i < 2 * num_frames; i++){
+        opt_T.push_back(MatrixXd::Identity(4, 4));
+        optimized.push_back(false);
+    }
+
+    MatrixXd cam_;
+    cv2eigen(cam, cam_);
+    cam_ = cam_.inverse();
+
+    int i0, i1, w0, w1, N;
+    const int min_pt = 32;
+    bool _exit = false;
+
+    vector<pair<int, int> > window_stereo;
+    for(int i = 0; i < window.size(); i++){
+        i0 = window[i].first;
+        i1 = window[i].second;
+        window_stereo.push_back(make_pair(2 * i0, 2 * i1));
+        window_stereo.push_back(make_pair(2 * i0 + 1, 2 * i1));
+        window_stereo.push_back(make_pair(2 * i0, 2 * i0 + 1));
+    }
+
+    for(int i = 0; i < num_frames; i += stride){
+        cout << i << endl;
+        w0 = 2 * num_frames + 1;
+        w1 = -1;
+        // Check if the reprojs are available
+        for(int j = 0; j < window_stereo.size(); j++){
+            i0 = 2 * i + window_stereo[j].first;
+            i1 = 2 * i + window_stereo[j].second;
+
+            cout << i0 << " " << i1 << endl;
+
+            w0 = min(w0, min(i0, i1));
+            w1 = max(w1, max(i0, i1));
+
+            if(max(i0, i1) >= 2 * num_frames){
+                _exit = true;
+                break;
+            }
+
+            while(reprojs.find(make_pair(i0, i1)) == reprojs.end()){
+                this_thread::sleep_for(chrono::milliseconds(20));
+            }
+        }
+
+        if(_exit){
+            break;
+        }
+
+        // Run Levenberg-Marquardt
+        vector<pair<int, int> > reps;
+        vector<MatrixXd> pr, p_r;
+        vector<double> wreps;
+        for(int j = 0; j < window_stereo.size(); j++){
+            i0 = 2 * i + window_stereo[j].first;
+            i1 = 2 * i + window_stereo[j].second;
+
+            assert(i1 != i0);
+            if(i1 > i0){
+                reps.push_back(make_pair(window_stereo[j].first, window_stereo[j].second - 1));
+            } else {
+                reps.push_back(make_pair(window_stereo[j].first - 1, window_stereo[j].second));
+            }
+
+            reproj r = reprojs[make_pair(i0, i1)];
+            N = min(min_pt, (int)r.p0.size());
+            if(N < min_pt){ // && false
+                //continue;
+                cout << "Bad pts" << endl << endl;
+                wreps.push_back(0.0);
+                pr.push_back(MatrixXd::Ones(min_pt, 3));
+                p_r.push_back(MatrixXd::Ones(min_pt, 3));
+            }
+            //else if(false && 3.0 - r.R.trace() < 0.007 && abs(i0 - i1) > 1){
+            //    //cout << r.R.trace() << " ";
+            //    continue;
+            //}
+            else {
+                if(i1 - i0 == 1 && optimized[i0]){
+                    //cout << "Freezing pose" << endl << endl;
+                    //wreps.push_back(0.0);
+                    //wreps.push_back(1.0);
+                    wreps.push_back(r.w);
+                } else {
+                    //wreps.push_back(1.0);
+                    wreps.push_back(r.w);
+                }
+                MatrixXd pr_(N, 3), p_r_(N, 3);
+                for(int k = 0; k < N; k++){
+                    pr_.row(k) << r.p0[k].x, r.p0[k].y, 1.0;
+                    p_r_.row(k) << r.p1[k].x, r.p1[k].y, 1.0;
+
+                    pr_.row(k) = cam_ * pr_.row(k).transpose();
+                    p_r_.row(k) = cam_ * p_r_.row(k).transpose();
+                }
+                
+                pr.push_back(pr_);
+                p_r.push_back(p_r_);
+            }
+        }
+
+        vector<MatrixXd> T0s;
+        
+        //double scale = 1.0, tscale = 1.0;
+        //if(optimized[w0]){
+        //    scale = opt_T[w0].block<3, 1>(0, 3).norm();
+        //}
+
+        for(int j = w0; j < w1; j++){
+            MatrixXd T0_0 = MatrixXd::Identity(4, 4);
+            reproj r = reprojs[make_pair(j, j + 1)];
+            T0_0.block<3, 3>(0, 0) = r.R;
+            T0_0.block<3, 1>(0, 3) = r.t;
+            T0s.push_back(T0_0);
+        }
+        
+        vector<MatrixXd> bT0s(T0s);
+
+        double uncert;
+        int nzeta = w1 - w0;
+        LM_res lm_res;
+
+        //wreps[0] = 0.0; //0.0;
+        //wreps[1] = 0.0;
+        if(reps.size() > 0){
+            Levenberg_Marquardt(nzeta, 1e-8, reps, wreps, 1e-2, T0s, pr, p_r, lm_res);
+        }
+
+        cout << lm_res.H_norm << endl
+             << lm_res.r_norm << endl
+             << lm_res.lambda << endl << endl;
+        
+        //uncert = lm_res.lambda;
+        //uncert = lm_res.r_norm;
+        // || lm_res.H_norm > 1e-2
+
+        if(lm_res.r_norm > 1e-2){
+           T0s = bT0s;
+        }
+
+        // double tnorm = 1.0;
+        // tnorm = T0s[0].block<3, 1>(0, 3).norm();
+        for(int j = w0; j < w1; j++){
+            opt_T[j] = T0s[j - w0];
+            //opt_T[j].block<3, 1>(0, 3) *= scale / tnorm;
+            //opt_T[j].block<3, 1>(0, 3) /= scale;
+            optimized[j] = true;
+        }
+    }
+}
+
+
 int main(){
     Mat cam = (Mat_<float>(3,3) << 718.8560, 0.0, 607.1928,
                                     0.0, 718.8560, 185.2157,
@@ -835,7 +1104,7 @@ int main(){
     vector<MatrixXd> all_T, all_GT;
     MatrixXd cT = MatrixXd::Identity(4, 4);
 
-    const int num_frames = 20;
+    const int num_frames = 400;
     const int stride = 1;
     vector<vector<Point2f> > key_points, key_points_R;
     vector<string> img_fns, img_fns_R;
@@ -888,7 +1157,9 @@ int main(){
     //                ref(key_points), ref(img_fns), ref(descs), cam, ref(reprojs));
     
     vector<MatrixXd> opt_T;
-    thread ba_lm(bundle_adjustment, ref(reprojs), window,
+    //thread ba_lm(bundle_adjustment, ref(reprojs), window,
+    //             stridew, num_frames, cam, ref(opt_T));
+    thread ba_lm(bundle_adjustment_stereo, ref(reprojs), window,
                  stridew, num_frames, cam, ref(opt_T));
 
     kp_extractor.join();
@@ -908,7 +1179,7 @@ int main(){
     MatrixXd sacc_T = MatrixXd::Identity(4, 4);
     double scale = 1.0;
     double tnorm = 1.0;
-    for(int i = 0; i < opt_T.size(); i++){
+    for(int i = 0; i < num_frames; i++){
         MatrixXd T = MatrixXd::Identity(4, 4);
         MatrixXd pT = MatrixXd::Identity(4, 4);
 
@@ -924,24 +1195,31 @@ int main(){
 
         MatrixXd dT = pT.inverse() * T;
 
-        if(i % stridew == 0){ // // i == 0
-            scale = dT.block<3, 1>(0, 3).norm();
-            tnorm = opt_T[i].block<3, 1>(0, 3).norm();
-        }
+        // if(i % stridew == 0){ // // i == 0
+        //     scale = dT.block<3, 1>(0, 3).norm();
+        //     if(i % 2 == 1){
+        //         //tnorm = opt_T[i].block<3, 1>(0, 3).norm(); // tnorm must be from the left
+        //         tnorm = (opt_T[i].inverse() * T_LR.inverse()).block<3, 1>(0, 3).norm();
+        //     } else {
+        //         tnorm = (opt_T[i].inverse() * T_LR).block<3, 1>(0, 3).norm();
+        //     }
+        // }
 
         poses_ba << acc_T << "\n\n";
 
-        opt_T[i].block<3, 1>(0, 3) *= scale / tnorm;
-        acc_T = acc_T * opt_T[i].inverse();
+        //opt_T[i].block<3, 1>(0, 3) *= scale / tnorm;
+        //acc_T = acc_T * opt_T[i].inverse();
+        MatrixXd _dT = (opt_T[2 * i].inverse() * opt_T[2 * i + 1].inverse());
+        acc_T = acc_T * _dT;
 
         //sacc_T = acc_T;
         //sacc_T.block<3, 1>(0, 3) *= scale / tnorm;
         //poses_ba << sacc_T << "\n\n";
 
         cout << i << " "
-             << opt_T[i].block<3, 1>(0, 3).norm() << " "
+             << _dT.block<3, 1>(0, 3).norm() << " "
              << dT.block<3, 1>(0, 3).norm() << " "
-             << dT.block<3, 1>(0, 3).norm() / opt_T[i].block<3, 1>(0, 3).norm() << endl;
+             << dT.block<3, 1>(0, 3).norm() / _dT.block<3, 1>(0, 3).norm() << endl;
 
         //if(tnorm != 0.0){
         //    opt_T[i].block<3, 1>(0, 3) *= scale / tnorm;
