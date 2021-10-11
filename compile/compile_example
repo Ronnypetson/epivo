@@ -1,0 +1,2 @@
+g++ -I/usr/local/include/eigen3/ -g _SE3_opt.cpp -o test_eigen
+g++ -I /usr/local/include/eigen3/ -I /usr/local/include/sophus/ -g sophus.cpp -o test_sophus

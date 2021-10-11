@@ -1,0 +1,1 @@
+g++ -I /usr/local/include/eigen3/ -I /usr/local/include/sophus/ -g test_jac_Rt.cpp -o jac_Rt -Ofast -msse2
